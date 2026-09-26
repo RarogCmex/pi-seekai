@@ -1,0 +1,4 @@
+node_modules/
+secret.env
+*.env
+research/raw/

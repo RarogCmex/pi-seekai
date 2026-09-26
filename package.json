@@ -1,0 +1,33 @@
+{
+  "name": "pi-seekai",
+  "version": "0.1.0",
+  "description": "seekai.cc provider for pi — curated chat catalog (openai-completions), /login, a live /v1/models overlay, and a readable error layer for new-api's 503/403/401/429 shapes.",
+  "type": "module",
+  "keywords": [
+    "pi-package",
+    "pi",
+    "pi-coding-agent",
+    "seekai",
+    "openai-compat",
+    "new-api"
+  ],
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "peerDependenciesMeta": {
+    "@earendil-works/pi-coding-agent": {
+      "optional": true
+    }
+  },
+  "scripts": {
+    "test": "node --test --import ./test/no-network.ts 'test/*.test.ts'",
+    "typecheck": "tsc -p tsconfig.json",
+    "check": "npm run typecheck && npm test",
+    "live": "node live/check.ts"
+  }
+}
