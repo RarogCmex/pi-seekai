@@ -42,8 +42,23 @@ const SENTINEL = "seekai:";
 /**
  * 401 `{"code":"","message":"Invalid token"}` — with the body dropped the raw
  * message is the bare `401 status code (no body)`.
+ *
+ * **A 401 has two meanings here** and they must not share a rewrite. The gateway's
+ * own rejection is `{"message":"Invalid token","type":"new_api_error"}` **with a
+ * `request id`**. When a *channel* is broken the upstream's error is relayed
+ * verbatim — `{"message":"Invalid API key","type":"bad_response_status_code"}`,
+ * **no `request id`** — and the key is fine (measured 2026-09-26: the deepseek and
+ * claude channels returned that while `glm-5.3-flash` kept answering and
+ * `GET /v1/models` kept serving the same key). Telling the user to re-login in
+ * that case sends them to fix something that is not broken.
  */
 const AUTH_RE = /\binvalid token\b|invalid_api_key|unauthorized|\b401\b/i;
+
+/**
+ * An upstream error relayed verbatim by new-api when a channel is broken
+ * (no `request id`, `type: "bad_response_status_code"`). Measured 2026-09-26.
+ */
+const CHANNEL_RE = /bad_response_status_code|invalid api key/i;
 
 /**
  * 403 `{"error":{"message":"预扣费额度失败, 用户剩余额度: ＄…, 需要预扣费额度: ＄…",
@@ -211,13 +226,28 @@ export function clarifySeekaiError(errorMessage: string): string | undefined {
   if (!errorMessage || errorMessage.startsWith(SENTINEL)) return undefined;
   const { status, message, raw } = parseGatewayError(errorMessage);
 
+  // The upstream's error, relayed verbatim by new-api when a channel is down:
+  // no `request id`, `bad_response_status_code`, and `Invalid API key` in the
+  // text. Check this **before** the auth branch — `\b401\b` would otherwise
+  // match and send the user to `/login` over a provider-side outage.
+  if (CHANNEL_RE.test(message)) {
+    return (
+      `${SENTINEL} the gateway relayed an upstream failure (HTTP ${status ?? 502}). Its own error ` +
+      `was \`${message}\`, which is the **channel's** credential, not yours. Your key is fine: ` +
+      "the same key still answers `GET /v1/models`, and other models on this gateway keep working. " +
+      "Retry, or switch model — re-running `/login` will not help. Original: " +
+      message
+    );
+  }
+
   // `status === 401` covers the dropped-body form: the SDK composes
   // `401 status code (no body)` when the new-api envelope is dropped, and this
   // gateway returns 401 only for an invalid key.
   if (AUTH_RE.test(message) || status === 401) {
     return (
       `${SENTINEL} authentication failed (HTTP ${status ?? 401}) — the gateway rejected the key ` +
-      "(`Invalid token`). Run `/login " +
+      `(\`${message}\`). Run ` +
+      "`/login " +
       PROVIDER_ID +
       "` or set `SEEKAI_API_KEY` to a valid key from " +
       SITE_URL +
@@ -296,6 +326,9 @@ export function needsPersistentHelp(errorMessage: string): boolean {
   const text = errorMessage.startsWith(SENTINEL)
     ? errorMessage
     : parseGatewayError(errorMessage).message;
+  // A relayed upstream failure is not something the user can fix by logging in,
+  // so it must not raise the persistent `/login` note.
+  if (CHANNEL_RE.test(text)) return false;
   return AUTH_RE.test(text) || BILLING_RE.test(text);
 }
 

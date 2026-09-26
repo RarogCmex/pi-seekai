@@ -60,6 +60,23 @@ describe("parseGatewayError", () => {
     assert.equal(parsed.message, "预扣费额度失败");
   });
 
+  test("a relayed upstream 401 is NOT treated as our key being rejected", () => {
+    // Recorded 2026-09-26: the deepseek and claude channels relayed the upstream's
+    // own error verbatim (no request id) while the same key kept listing models
+    // and while glm-5.3-flash kept answering.
+    const channel = '401: {"message":"Invalid API key","type":"bad_response_status_code","param":"","code":"bad_response_status_code"}';
+    const out = clarifySeekaiError(channel) ?? "";
+    assert.match(out, /relayed an upstream failure/);
+    assert.match(out, /not yours|channel's/i);
+    assert.doesNotMatch(out, /Run `\/login/);        // must not ADVISE re-login (it may mention it to rule it out)
+    assert.equal(needsPersistentHelp(channel), false); // and no persistent TUI note
+    // while the gateway's own rejection still says what it means
+    const realAuth = clarifySeekaiError(AUTH_SEEN) ?? "";
+    assert.match(realAuth, /authentication failed/);
+    assert.match(realAuth, /\/login/);
+    assert.equal(needsPersistentHelp(AUTH_SEEN), true);
+  });
+
   test("unwraps the stringified blob pi-ai actually produces for an enveloped body", () => {
     // Measured: pi-ai strips the outer `error` key and surfaces `401: {"code":…}`.
     const parsed = parseGatewayError('401: {"code":"","message":"Invalid token (request id: x)","type":"new_api_error"}');
