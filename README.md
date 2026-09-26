@@ -314,12 +314,13 @@ computation.
 |---|---|---|
 | `live/check.ts` run 1 (A–F) | 509 paid | $0.000106 (balance delta) |
 | `live/check.ts` run 2 (A–F, after a harness fix) | 602 paid | $0.000122 (balance delta) |
+| `live/check.ts` run 3 (A–F, final code) | 617 paid | $0.000154 (balance delta) |
 | one real `pi -p` run (`deepseek-v4.1-flash`) | not captured | **$0.001098 (balance delta)** |
 | one real `pi -p` run (`…/DeepSeek-V4-Flash-0731`) | not captured | ≈$0.001 (unmeasured, same shape) |
 | `research/raw/probe*.mjs` — ~20 paid 2xx calls | ≈1 500 out + ≈600 in | ≈$0.0005 (extrapolated) |
 | `POST /v1/messages` surface probe | ≈100 | ≈$0.00002 |
 | all rejected probes (401, 503, 404, 429, 403 balance reads) | 0 (not billed) | $0.000000 |
-| **Total** | | **≈ $0.0035** |
+| **Total** | | **≈ $0.0036** |
 
 That is **≈7 % of the $0.05 budget**. The account balance is *not* the build's spend:
 it fell ~$2.00 between the recon and the end of this session, which is ~570× the

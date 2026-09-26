@@ -73,12 +73,13 @@ are from `live/check.ts`; the raw probes used `max_tokens ≤ 512`.
 |---|---|---|
 | `live/check.ts` run 1 (A–F) | 509 paid | $0.000106 (balance delta) |
 | `live/check.ts` run 2 (A–F, after harness fix) | 602 paid | $0.000122 (balance delta) |
+| `live/check.ts` run 3 (A–F, final code) | 617 paid | $0.000154 (balance delta) |
 | one real `pi -p` run (`seekai/deepseek-v4.1-flash`, "ok") | not captured | **$0.001098 (balance delta)** |
 | one real `pi -p` run (`…/DeepSeek-V4-Flash-0731`, slashed id) | not captured | ≈$0.001 (same shape, unmeasured) |
 | `research/raw/probe*.mjs` — ~20 paid 2xx calls (liveness sweep, think shapes, effort probes, tool probe) | ≈1 500 completion + ≈600 prompt | ≈$0.0005 (extrapolated from the measured runs) |
 | `POST /v1/messages` surface probe | ≈100 | ≈$0.00002 |
 | rejected probes (401 key, 503/404 model, 429s, 403 balance reads) | 0 (not billed) | $0.000000 |
-| **total** | | **≈ $0.0035** |
+| **total** | | **≈ $0.0036** |
 
 That is **≈7 % of the $0.05 budget**.
 
