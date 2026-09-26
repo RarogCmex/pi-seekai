@@ -187,17 +187,32 @@ to pi-ai is the house default, and a partial-tag stream is easy to get wrong). T
 end-to-end effect *is* verified in print mode: `pi -p` on the inline-thinker prints
 a clean answer, not `<think>` text.
 
-### Errors: recover the dropped body, then rewrite
+### Errors: normalise the body, then rewrite
 
-The gateway is `new-api`, and several of its failures use a `{"code","message"}`
-envelope **with no `error` key**. The OpenAI SDK builds its message only from
-`error`, so it *drops* those bodies — driving pi-ai's real adapter with the recorded
-bodies (offline) shows pi would otherwise see bare:
-`401 status code (no body)`, `503 status code (no body)`,
-`429 status code (no body)`. A rewrite cannot match a body it never sees.
+The gateway is `new-api`, and its failures arrive in two shapes. Which one you get
+decides what pi sees, and the difference is worth spelling out because it is easy
+to reason about the wrong one:
+
+- **Enveloped** `{"error":{"code":…,"message":…,"type":…}}` — what **every status
+  we measured** actually sends (401, 403, 429, 503, 404). The OpenAI SDK strips the
+  outer `error` key, and pi-ai then surfaces the *stringified remainder* glued to the
+  status: `401: {"code":"","message":"Invalid token …","type":"new_api_error"}`.
+  The text survives — as a JSON blob no human wants to read and no rewrite wants to
+  parse twice.
+- **Non-OpenAI** — a bare `{"code":…,"message":…}` with no `error` key, and the
+  proxy's HTML on 502. The SDK composes its message only from `error`, so pi sees
+  bare `401 status code (no body)` / `502 status code (no body)`. Here the body
+  really is lost.
+
+Both rows are measured offline by driving pi-ai's real adapter with both fixtures
+for the same status (enveloped → `401: {"code":…}`; bare → `401 status code (no
+body)`), and `test/errors.test.ts` locks the enveloped shape in as a regression
+test.
 
 So `errors.ts` wraps the registered api surface with `withBodyRecovery`, a fetch
-wrapper that re-emits a non-OK body as `text/plain` (the standard dropped-body fix).
+wrapper that re-emits a non-OK body as `text/plain` — the standard dropped-body fix.
+Here it buys two things: the genuinely lost bodies come back, and *both* shapes
+arrive as one uniform `<status> <text>` that `parseGatewayError` can handle once.
 After that, `message_end` rewrites the four measured shapes into actionable
 sentences:
 
@@ -309,6 +324,11 @@ The gateway prices nothing, so USD figures come only from the balance its 403
 pre-billing text discloses. Token counts for harness runs are exact; the gateway
 publishes no per-token rate, so the USD is the balance delta, not a rate × tokens
 computation.
+
+One caveat on that method, measured: the balance is shown to six decimals and does
+not always move for a small run — a 136-paid-token harness pass reported a delta of
+**$0.000000**. Treat the delta as a coarse upper bound on spend, not as a meter; the
+exact figure is the token count.
 
 | Activity | Tokens | Cost |
 |---|---|---|
