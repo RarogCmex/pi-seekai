@@ -157,10 +157,13 @@ export async function recoverErrorBody(response: Response): Promise<Response> {
   }
   const message = extractGatewayMessage(body);
   if (!message) return response;
+  // Preserve the original headers (e.g. Retry-After) — only the body encoding changes.
+  const headers = new Headers(response.headers);
+  headers.set("content-type", "text/plain; charset=utf-8");
   return new Response(message, {
     status: response.status,
     statusText: response.statusText,
-    headers: { "content-type": "text/plain; charset=utf-8" },
+    headers,
   });
 }
 

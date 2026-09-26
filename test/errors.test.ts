@@ -65,11 +65,13 @@ describe("body recovery (the dropped-body fix)", () => {
   test("re-emits a new-api {code,message} body as plain text", async () => {
     const response = new Response('{"code":"","message":"Invalid token"}', {
       status: 401,
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", "retry-after": "30" },
     });
     const recovered = await recoverErrorBody(response);
     assert.equal(recovered.status, 401);
     assert.match(recovered.headers.get("content-type") ?? "", /text\/plain/);
+    // Other headers (e.g. Retry-After, which pi's retry may honor) survive.
+    assert.equal(recovered.headers.get("retry-after"), "30");
     assert.equal(await recovered.text(), "Invalid token");
   });
 
