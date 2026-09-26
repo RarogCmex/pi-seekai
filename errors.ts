@@ -208,7 +208,10 @@ export function clarifySeekaiError(errorMessage: string): string | undefined {
   if (!errorMessage || errorMessage.startsWith(SENTINEL)) return undefined;
   const { status, message, raw } = parseGatewayError(errorMessage);
 
-  if (AUTH_RE.test(message)) {
+  // `status === 401` covers the dropped-body form: the SDK composes
+  // `401 status code (no body)` when the new-api envelope is dropped, and this
+  // gateway returns 401 only for an invalid key.
+  if (AUTH_RE.test(message) || status === 401) {
     return (
       `${SENTINEL} authentication failed (HTTP ${status ?? 401}) — the gateway rejected the key ` +
       "(`Invalid token`). Run `/login " +
@@ -232,10 +235,13 @@ export function clarifySeekaiError(errorMessage: string): string | undefined {
   }
 
   if (MODEL_NOT_FOUND_RE.test(message)) {
+    // Deliberately does NOT echo the numeric status: `503`/`504` are in pi's
+    // *retryable* pattern, and a no-channel routing error is deterministic —
+    // retrying it three times only burns the gateway's 5/min budget.
     return (
-      `${SENTINEL} this model has no serving channel for your account (HTTP ${status ?? 503}, ` +
-      "`model_not_found`). `GET /v1/models` advertises ids the gateway *knows*, not ids your group " +
-      "can actually run — pick another model. Original: " +
+      `${SENTINEL} this model has no serving channel for your account (\`model_not_found\`). ` +
+      "\`GET /v1/models\` advertises ids the gateway knows, not ids your group can actually run — " +
+      "pick another model; retrying will not help. Original: " +
       message
     );
   }
