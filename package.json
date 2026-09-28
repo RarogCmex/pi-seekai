@@ -1,8 +1,17 @@
 {
-  "name": "pi-seekai",
+  "name": "@rarogcmex/pi-seekai",
   "version": "0.1.0",
   "description": "seekai.cc provider for pi — curated chat catalog (openai-completions), /login, a live /v1/models overlay, and a readable error layer for new-api's 503/403/401/429 shapes.",
   "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/RarogCmex/pi-seekai.git"
+  },
+  "bugs": {
+    "url": "https://github.com/RarogCmex/pi-seekai/issues"
+  },
+  "homepage": "https://github.com/RarogCmex/pi-seekai#readme",
   "keywords": [
     "pi-package",
     "pi",
@@ -11,6 +20,12 @@
     "openai-compat",
     "new-api"
   ],
+  "scripts": {
+    "test": "node --test --import ./test/no-network.ts 'test/*.test.ts'",
+    "typecheck": "tsc -p tsconfig.json",
+    "check": "npm run typecheck && npm test",
+    "live": "node live/check.ts"
+  },
   "pi": {
     "extensions": [
       "./index.ts"
@@ -24,10 +39,7 @@
       "optional": true
     }
   },
-  "scripts": {
-    "test": "node --test --import ./test/no-network.ts 'test/*.test.ts'",
-    "typecheck": "tsc -p tsconfig.json",
-    "check": "npm run typecheck && npm test",
-    "live": "node live/check.ts"
+  "publishConfig": {
+    "access": "public"
   }
 }
