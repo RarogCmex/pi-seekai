@@ -24,7 +24,9 @@ Everything a claim rests on was probed against the live gateway on **2026-09-26*
 ## Install / use
 
 ```
-pi install /path/to/pi-seekai       # or: pi -e /path/to/pi-seekai/index.ts
+pi install git:github.com/RarogCmex/pi-seekai@main
+# or a local checkout:  pi install /path/to/pi-seekai
+# or one-shot:          pi -e /path/to/pi-seekai/index.ts
 /login seekai                        # or export SEEKAI_API_KEY=sk-...
 pi --provider seekai --model seekai/deepseek-v4.1-flash -p "hello"
 ```
