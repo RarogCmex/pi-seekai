@@ -5,7 +5,7 @@
  * `seekai.cc` matches none of pi-ai's URL auto-detection branches, so the
  * auto-detected profile is a vanilla OpenAI one that is wrong in several places.
  * Every flag below is set explicitly; the grounded ones cite the probe in
- * `research/` or the 2026-09-26 recon handoff.
+ * `research/`.
  *
  * Prices are zero on purpose: the gateway publishes none (see `catalog.ts`).
  */

@@ -345,8 +345,8 @@ exact figure is the token count.
 | **Total** | | **≈ $0.0036** |
 
 That is **≈7 % of the $0.05 budget**. The account balance is *not* the build's spend:
-it fell ~$2.00 between the recon and the end of this session, which is ~570× the
-measured build spend and therefore belongs to concurrent account activity. The
+it moved by roughly two orders of magnitude more than the measured spend over the
+same window, which is concurrent account activity. The
 ledger itemises every 2xx call this build made; the 401/503/429/403 probes are listed
 at zero because a rejection is not billed.
 
@@ -387,5 +387,5 @@ discovery.ts  additive /v1/models overlay (authenticated, never throws)
 errors.ts     body recovery, readable error rewrites, inline-<think> extraction
 live/check.ts paced A–F live harness (explicit; not part of npm test)
 test/*.ts     node --test suite + no-network preload
-research/     recon handoff + this build's live-verification report (raw/ is gitignored)
+research/     this build's live-verification report (raw/ is gitignored)
 ```

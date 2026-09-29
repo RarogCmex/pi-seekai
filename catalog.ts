@@ -2,10 +2,11 @@
  * Curated catalog for the seekai.cc gateway (https://seekai.cc/v1).
  *
  * Engine: `new-api` (a one-api fork). Provenance — everything below was measured
- * against the live gateway on 2026-09-26 with the key in `secret.env`; raw probe
- * transcripts live in `research/`. The recon handoff
- * (`research/2026-09-26-recon-handoff.md`) is the starting point; where this file
- * and the handoff disagree, the newer measurement in `research/` wins.
+ * against the live gateway on 2026-09-26 with a real key supplied through
+ * `/login seekai` or `SEEKAI_API_KEY`; raw probe transcripts live in
+ * `research/` (gitignored). Findings are reported in
+ * `research/2026-09-26-live-verification.md`, which is the authoritative record
+ * where an earlier reconnaissance pass and a later measurement disagree.
  *
  * Two things are deliberately NOT here, because this gateway refuses to disclose
  * them for free:

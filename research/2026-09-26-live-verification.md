@@ -3,8 +3,8 @@
 Second measurement pass, done while building `pi-seekai`. Raw probe scripts and
 full transcripts live in `research/raw/` (gitignored): `probe.mjs`, `probe2.mjs`,
 `probe3.mjs`, `probe4.mjs`, `probe5.mjs`, `compose.mjs`, `compose2.mjs`, and
-`live-run-1.txt` / `live-run-2.txt`. Nothing here contradicts the recon handoff;
-it fills its open questions and corrects one implication.
+`live-run-1.txt` / `live-run-2.txt`. This pass closes the open questions left by
+an earlier reconnaissance pass and corrects one of its implications (§7).
 
 Operating constraints held throughout: **5 requests/minute, failures included** →
 every probe paced ≥13 s; **accepted = billed** → no cap was bisected with accepted
@@ -83,14 +83,31 @@ are from `live/check.ts`; the raw probes used `max_tokens ≤ 512`.
 
 That is **≈7 % of the $0.05 budget**.
 
-**Do not read the account balance as this build's spend.** The recon recorded
-`$<redacted>`; the build ended at `≈$<redacted>` — a ~$2.00 drop that is ~570× the
-measured build spend and therefore belongs to concurrent account activity, not to
-these probes. The ledger above itemises the calls this build actually made.
+**Do not read the account balance as this build's spend.** Over the same window
+the balance moved by roughly two orders of magnitude more than the measured
+build spend, which is concurrent account activity rather than these probes. The
+ledger above itemises the calls this build actually made.
 
-## 7. Correction to the recon handoff
+## 7. Two gateway behaviours worth recording
 
-The handoff implied `/v1/models`' `supported_endpoint_types:["openai"]` means only
+**`/v1/models`' `supported_endpoint_types` is a hint, not a capability list.**
+An earlier pass read `supported_endpoint_types:["openai"]` as meaning only
 completions is available. It does not: `POST /v1/messages` answered 200 with an
-Anthropic-shaped body. The field is a hint, not a capability list (same lesson as
-pitfalls C-series: a listing is not an entitlement).
+Anthropic-shaped body. A listing is not an entitlement.
+
+**The free-probe technique does not work on this gateway.**
+`max_tokens: 99999999` on `deepseek-v4.1-flash` returned **HTTP 200** and
+generated 39 tokens — accepted and billed, with no cap disclosed. On
+`glm-5.3-flash` the same request returned an opaque
+`400 "We got a bad response from the source"` (the upstream's own rejection, no
+number in it). So output caps are **not** obtainable from free rejections here;
+most caps are recorded as *unverified* rather than measured. An accepted probe
+is a billed probe.
+
+**A 403 pre-billing refusal discloses the account balance in the clear.** The
+body reads `预扣费额度失败, 用户剩余额度: ＄<balance>, 需要预扣费额度: ＄<reservation>`:
+the gateway reserves `max_tokens × price` and reports both the remaining balance
+and the reservation. The reservation is the useful half — it is what makes a
+huge-`max_tokens` probe refuse pre-inference on expensive models. The balance is
+account state, so `errors.ts` surfaces it to the user as a debugging aid but no
+captured value is reproduced anywhere in this repository.
