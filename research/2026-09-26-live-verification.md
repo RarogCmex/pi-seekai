@@ -63,7 +63,7 @@ content deltas carry the raw `<think>…` text; the stream ends with
 | `POST /v1/messages` | **200**, Anthropic-shaped (`{"type":"message","role":"assistant","content":[{"type":"text","text":"<think>…"}]}`) | **exists but deliberately not added** — unprobed for tools/streaming; the listing's `supported_endpoint_types:["openai"]` is therefore *not authoritative* |
 | `POST /v1/responses` | 400 `{"code":"resource_error","message":"Resource error…"}` | not a clean 404; no backend wired; not added |
 
-## 6. Cost ledger (this build session)
+## 6. Cost ledger (2026-09-26 session)
 
 The gateway publishes no prices, so USD figures come only from the balance the 403
 pre-billing text discloses (`用户剩余额度: ＄…`). Token counts for the harness runs
@@ -76,17 +76,16 @@ are from `live/check.ts`; the raw probes used `max_tokens ≤ 512`.
 | `live/check.ts` run 3 (A–F, final code) | 617 paid | $0.000154 (balance delta) |
 | one real `pi -p` run (`seekai/deepseek-v4.1-flash`, "ok") | not captured | **$0.001098 (balance delta)** |
 | one real `pi -p` run (`…/DeepSeek-V4-Flash-0731`, slashed id) | not captured | ≈$0.001 (same shape, unmeasured) |
-| `research/raw/probe*.mjs` — ~20 paid 2xx calls (liveness sweep, think shapes, effort probes, tool probe) | ≈1 500 completion + ≈600 prompt | ≈$0.0005 (extrapolated from the measured runs) |
+| ~20 paid 2xx probe calls (liveness sweep, think shapes, effort probes, tool probe); the scripts are in gitignored `research/raw/`, not published | ≈1 500 completion + ≈600 prompt | ≈$0.0005 (extrapolated from the measured runs) |
 | `POST /v1/messages` surface probe | ≈100 | ≈$0.00002 |
 | rejected probes (401 key, 503/404 model, 429s, 403 balance reads) | 0 (not billed) | $0.000000 |
 | **total** | | **≈ $0.0036** |
 
-That is **≈7 % of the $0.05 budget**.
-
-**Do not read the account balance as this build's spend.** Over the same window
-the balance moved by roughly two orders of magnitude more than the measured
-build spend, which is concurrent account activity rather than these probes. The
-ledger above itemises the calls this build actually made.
+**Do not read the account balance as this session's spend.** The balance is the
+only USD figure the gateway discloses, and over the same window it moved by
+roughly two orders of magnitude more than the measured spend above — concurrent
+account activity, not these probes. The ledger itemises only the calls made here,
+and the exact, attributable figures are the token counts.
 
 ## 7. Two gateway behaviours worth recording
 

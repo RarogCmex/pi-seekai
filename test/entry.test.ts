@@ -157,8 +157,8 @@ describe("turn_end", () => {
   });
 
   test("stays silent in print mode so `pi -p` still prints the error", () => {
-    // Pitfall P23: an entry appended after the errored assistant message makes
-    // `pi -p` print nothing at all.
+    // An entry appended after the errored assistant message makes `pi -p` print
+    // nothing at all, which is why index.ts gates the note on `ctx.hasUI`.
     const { pi, handlers } = fakePi();
     seekaiExtension(pi);
     assert.equal(

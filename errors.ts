@@ -13,9 +13,12 @@
  *     `text/plain` so the SDK falls back to raw text and the cause survives to
  *     `message_end`.
  *
- *  2. **Readable rewrites.** `clarifySeekaiError` turns the four measured shapes
+ *  2. **Readable rewrites.** `clarifySeekaiError` turns five measured shapes
  *     (401 invalid token, 403 pre-billing credit refusal, 503/404 model_not_found,
- *     429 rate limit) into actionable sentences. Every rewrite is idempotent and
+ *     429 rate limit, 502 proxy HTML) into actionable sentences, plus a sixth
+ *     case that is deliberately *not* treated as one of them: a 401 relayed
+ *     verbatim from a broken upstream channel, which must not send the user to
+ *     `/login`. Every rewrite is idempotent and
  *     is proven, in `test/errors.test.ts`, against pi's *real* classifiers
  *     (`isRetryableAssistantError`, `isContextOverflow`, `getOverflowPatterns`) to
  *     keep the retry/overflow behavior pi intends: a 429/502 stays retryable, a
@@ -37,7 +40,10 @@ export const SITE_URL = "https://seekai.cc";
 /** Prefix marking a message this module already rewrote, so rewrites are idempotent. */
 const SENTINEL = "seekai:";
 
-// --- measured gateway shapes (raw bodies recorded in research/) ---------------
+// --- measured gateway shapes -------------------------------------------------
+// The raw bodies behind these were recorded 2026-09-26 into `research/raw/`,
+// which is gitignored and not published. The committed copies the tests replay
+// are in `test/fixtures/`.
 
 /**
  * 401 `{"code":"","message":"Invalid token"}` — with the body dropped the raw

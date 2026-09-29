@@ -2,14 +2,13 @@
   // Typecheck against pi's types:
   //   npm run typecheck   (tsc -p tsconfig.json)
   //
-  // Requires symlinks (not committed):
-  //   mkdir -p node_modules/@earendil-works node_modules/@types
-  //   ln -sfn ~/.local/lib/node_modules/@earendil-works/pi-coding-agent \
-  //     node_modules/@earendil-works/pi-coding-agent
-  //   ln -sfn ~/.local/lib/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai \
-  //     node_modules/@earendil-works/pi-ai
-  //   ln -sfn ~/.local/lib/node_modules/@earendil-works/pi-coding-agent/node_modules/@types/node \
-  //     node_modules/@types/node
+  // Requires pi's own packages once (not committed — machine-specific):
+  //   node scripts/link-pi.mjs
+  // The script locates the global pi install itself (npm prefix, nvm, pnpm,
+  // ~/.local, /usr/local, or the directory the `pi` executable resolves to) and
+  // links @earendil-works/pi-coding-agent, @earendil-works/pi-ai and @types/node
+  // (junctions on Windows). For a specific install:
+  //   PI_ROOT=/path/to/node_modules node scripts/link-pi.mjs  //     node_modules/@types/node
   //
   // `paths` mirrors pi's extension loader, which aliases the bare
   // "@earendil-works/pi-ai" specifier to pi-ai's compat entrypoint (a strict

@@ -62,8 +62,8 @@ export default function (pi: ExtensionAPI) {
   // A persistent TUI note for the two failures the user must fix (invalid key,
   // balance cannot cover the pre-billing reservation). The `ctx.hasUI` gate is
   // load-bearing: an entry appended *after* the errored assistant message makes
-  // `pi -p` print nothing at all (pitfall P23), so print mode keeps only the
-  // rewritten error bubble. Deduped via customType so re-emits do not stack.
+  // `pi -p` print nothing at all, so print mode keeps only the rewritten error
+  // bubble. Deduped via customType so re-emits do not stack.
   pi.on("turn_end", (event, ctx) => {
     if (!ctx.hasUI) return;
     if (event.outcome !== "error") return;

@@ -3,8 +3,9 @@
  *
  * Engine: `new-api` (a one-api fork). Provenance — everything below was measured
  * against the live gateway on 2026-09-26 with a real key supplied through
- * `/login seekai` or `SEEKAI_API_KEY`; raw probe transcripts live in
- * `research/` (gitignored). Findings are reported in
+ * `/login seekai` or `SEEKAI_API_KEY`. The raw probe transcripts are in
+ * `research/raw/`, which is gitignored and **not published**; the findings they
+ * support are reported in
  * `research/2026-09-26-live-verification.md`, which is the authoritative record
  * where an earlier reconnaissance pass and a later measurement disagree.
  *
@@ -13,8 +14,10 @@
  *
  *  - Per-model prices. `seekai.cc` publishes no price list, and the gateway
  *    prices nothing in its responses. Its 403 pre-billing refusal leaks only the
- *    *account balance* (a debug aid, not a price source). By house rule every
- *    `cost` is therefore zero with a `priceNote` — never a guess.
+ *    *account balance* (a debug aid, not a price source). Every `cost` is
+ *    therefore zero with a `priceNote`: an unknown price is published as zero
+ *    plus a note, never guessed, because a plausible-looking wrong number ends up
+ *    in the user's cost report.
  *  - Context windows and output caps. `max_tokens: 99999999` is **accepted**
  *    (HTTP 200, billed) rather than rejected, so no rejection discloses the cap,
  *    and bracketing it with accepted requests would buy the answer. Every window
@@ -76,7 +79,13 @@ export interface CatalogEntry {
   maxTokens: number;
   /** pi input modalities. Only `text` is verified; vision is unprobed. */
   input: ("text" | "image")[];
-  /** Whether the model reasons. True for every listed id (all are reasoner families; see README). */
+  /**
+   * Whether the model reasons. `true` for every listed id, because all eleven
+   * belong to reasoner families — but note the evidence differs per id: it is
+   * measured for the five that answered, and assumed from the family for the six
+   * that did not (their reasoning shape is recorded as `unknown` in the README
+   * matrix). Also `true` for any id the discovery overlay invents.
+   */
   reasoning: boolean;
   thinking: ThinkingControl;
   /** Human-readable caveat; pi's `Model` has no notes field. */
@@ -102,7 +111,8 @@ export interface CatalogEntry {
  * The effort tokens are the ones the gateway accepted in probes (`low`, `high`;
  * `medium` also accepted). `minimal`/`xhigh`/`max` are folded onto the nearest of
  * those so no pi-internal level name leaks to the wire (the gateway tolerates
- * unknown values — that was probed — but normalizing is house convention).
+ * unknown values — that was probed — but normalizing means no pi-internal level
+ * name can reach the wire if pi's level vocabulary changes).
  */
 export const SEEKAI_THINKING: ThinkingLevelMap = {
   off: null,

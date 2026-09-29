@@ -1,10 +1,12 @@
 # pi-seekai
 
-A pi provider plugin for the **seekai.cc** gateway (`https://seekai.cc/v1`) — an
-`new-api` (one-api fork) aggregator that name-routes model ids onto assorted
-upstreams. Registers the `seekai` provider with a curated 11-id catalog,
-`/login` support, a live `/v1/models` overlay, and an error layer for new-api's
-particular failure shapes.
+A provider plugin for [pi](https://github.com/earendil-works/pi)
+(`@earendil-works/pi-coding-agent`, the coding agent this plugs into) targeting the
+**seekai.cc** gateway (`https://seekai.cc/v1`) — a `new-api` (one-api fork)
+aggregator that name-routes model ids onto assorted upstreams. npm name:
+`@rarogcmex/pi-seekai`. Registers the `seekai` provider with a curated 11-id
+catalog, `/login` support, a live `/v1/models` overlay, and an error layer for
+new-api's particular failure shapes.
 
 Two facts dominate this gateway's design, and both were measured, not read:
 
@@ -18,18 +20,44 @@ Two facts dominate this gateway's design, and both were measured, not read:
    full rationale is in **§ The `<think>` decision**.
 
 Everything a claim rests on was probed against the live gateway on **2026-09-26**
-(pi 0.87.1, pi-ai 0.87.1) with the key in `secret.env`. Raw evidence:
-`research/2026-09-26-live-verification.md` (+ gitignored `research/raw/`).
+(pi 0.87.1, pi-ai 0.87.1) with a real key. The findings are in
+[`research/2026-09-26-live-verification.md`](research/2026-09-26-live-verification.md);
+the raw probe transcripts behind them are in `research/raw/`, which is gitignored
+and **not published**.
 
 ## Install / use
 
-```
+```bash
 pi install git:github.com/RarogCmex/pi-seekai@main
 # or a local checkout:  pi install /path/to/pi-seekai
 # or one-shot:          pi -e /path/to/pi-seekai/index.ts
-/login seekai                        # or export SEEKAI_API_KEY=sk-...
-pi --provider seekai --model seekai/deepseek-v4.1-flash -p "hello"
 ```
+
+Then, **inside pi** (its own slash command, not a shell command):
+
+```
+/login seekai
+```
+
+or set the key in the environment instead:
+
+```bash
+export SEEKAI_API_KEY=sk-…
+pi --model seekai/deepseek-v4.1-flash -p "hello"   # the id already names the provider
+```
+
+**Before you start.** Three things a first-time user needs and the gateway does not
+tell you:
+
+- **The account must carry a prepaid balance.** Every request *reserves*
+  `max_tokens × price` before inference and refuses with 403 `预扣费额度失败` when
+  the balance cannot cover the reservation. That is why six of the eleven listed
+  ids fail for a fresh account: it is a balance/quota state, not a dead model.
+- **A key comes from the seekai.cc site.** Nothing in this plugin can create one;
+  the `/login` prompt names the site.
+- **pi version.** The `<think>` extraction and the `message_end` rewrite depend on
+  pi 0.87 hook semantics (`index.ts`, `models.ts`). `peerDependencies` is `*`, so
+  an older pi may load the plugin and silently degrade rather than refuse.
 
 Environment:
 
@@ -37,6 +65,7 @@ Environment:
 |---|---|
 | `SEEKAI_API_KEY` | API key (`sk-…`). The stored credential from `/login` wins over it. |
 | `SEEKAI_BASE_URL` | Endpoint override (default `https://seekai.cc/v1`), trailing slash stripped. |
+| `SEEKAI_LIVE_BALANCE` | `1` opts the live harness into check G (the balance read). Off by default — see § Development. |
 
 ## The catalog
 
@@ -62,15 +91,19 @@ ids. The table below combines that listing with a live liveness probe
 numbers are placeholders by necessity, not by laziness.** The gateway does *not*
 reject a huge `max_tokens` (measured: `max_tokens: 99999999` → HTTP 200 and a normal
 completion), so no free rejection discloses a cap, and the only way to "measure" one
-would be to *buy* it by generating to the limit. Per the catalogue rule, that is not
-done. The catalog therefore uses a small conservative floor (32 K / 4 K) so pi
+would be to *buy* it by generating to the limit, and an accepted oversize request
+is billed in full — so that is not done. The catalog therefore uses a small
+conservative floor (32 K / 4 K) so pi
 compacts *before* an over-context request would be billed. § "What remains
 unverified" says how to measure it properly.
 
-**Every price is zero, with a `priceNote`.** seekai.cc publishes no price list and
-returns no per-token cost; its 403 pre-billing text leaks only the *account balance*,
-which is a debugging aid, not a price source. pi therefore reports `$0.00` rather
-than a plausible-looking wrong number.
+**Every price is zero, with a `priceNote` — and that does not mean free.**
+seekai.cc publishes no price list and
+returns no per-token cost; its 403 pre-billing text leaks only the *account
+balance*, which is a debugging aid, not a price source. pi therefore reports
+`$0.00` rather than a plausible-looking wrong number. **Your seekai.cc balance is
+still debited per request**: the gateway reserves `max_tokens × price` before
+inference and refuses when the balance cannot cover it (§ Install / use).
 
 ### Why all 11 ids, including the six dead ones
 
@@ -122,6 +155,7 @@ the grounded ones cite a probe:
 | `supportsFinishReason` | `true` | Measured: `finish_reason` is `stop` / `length` / `tool_calls`. |
 | `supportsDeveloperRole` | `false` | Conservative: `developer` was not proven accepted, `system` always is. |
 | `supportsStore`, `supportsLongCacheRetention` | `false` | `store` and `prompt_cache_retention` are undocumented → do not send them. |
+| `supportsOpenAIGrammarTools` | `false` | OpenAI grammar tools are undocumented here → do not send them. |
 | `supportsStrictMode` | `false` | Strict JSON-schema tools are undocumented (pi 0.87 already defaults this false for unknown hosts). |
 | `requiresToolResultName`, `requiresAssistantAfterToolResult`, `requiresThinkingAsText` | `false` | Standard OpenAI tool-call shapes round-trip (probed: a function tool returns `finish_reason:"tool_calls"`). |
 
@@ -162,7 +196,7 @@ as ordinary answer text. Left alone, the consequences are bad in three ways:
 - the user's "answer" is the model's private scratchpad;
 - the reasoning is **persisted** as the assistant turn and **replayed to the model
   as its own previous answer** on the next request;
-- a small `max_tokens` turn (the recon saw `max_tokens: 8`) is pure thinking, so
+- a small `max_tokens` turn (measured with `max_tokens: 8`) is pure thinking, so
   the user gets no answer at all.
 
 pi offers no compat flag for this (`requiresThinkingAsText` is the *opposite*
@@ -184,8 +218,9 @@ Edge cases, both measured:
 **Cost / limitation, stated plainly:** during *streaming*, pi-ai assembles the raw
 text deltas, so a live TUI shows the `<think>…` text until the message finalizes;
 only the finalized (and persisted) message is cleaned. Fixing the live view needs a
-custom SSE/fetch layer, which this plugin deliberately avoids (delegating streaming
-to pi-ai is the house default, and a partial-tag stream is easy to get wrong). The
+custom SSE/fetch layer, which this plugin deliberately avoids: streaming stays
+delegated to pi-ai, because a `<think>` tag split across SSE chunks is easy to get
+wrong and getting it wrong corrupts the answer. The
 end-to-end effect *is* verified in print mode: `pi -p` on the inline-thinker prints
 a clean answer, not `<think>` text.
 
@@ -215,16 +250,21 @@ So `errors.ts` wraps the registered api surface with `withBodyRecovery`, a fetch
 wrapper that re-emits a non-OK body as `text/plain` — the standard dropped-body fix.
 Here it buys two things: the genuinely lost bodies come back, and *both* shapes
 arrive as one uniform `<status> <text>` that `parseGatewayError` can handle once.
-After that, `message_end` rewrites the four measured shapes into actionable
-sentences:
+After that, `message_end` rewrites the five measured shapes into actionable
+sentences, and deliberately does **not** rewrite a sixth:
 
 | Shape | pi sees (after recovery) | Rewrite | Retryable after? |
 |---|---|---|---|
+| Relayed upstream 401 | `400 …bad_response_status_code… Invalid API key` (a *broken channel*, relayed verbatim by new-api) | names the upstream outage; checked **before** the auth branch, because `\b401\b` would otherwise match | **no** — and deliberately *not* sent to `/login` |
 | Invalid key | `401 Invalid token` | names `/login seekai`, `SEEKAI_API_KEY`, the site | **no** (deterministic) |
 | Pre-billing refusal | `403 预扣费额度失败, 用户剩余额度: ＄…, 需要预扣费额度: ＄…` | explains the `max_tokens × price` reservation and that it is a balance, not a key, problem | **no** |
 | No channel | `503 No available channel for model X…` / `404 …not supported by any configured account…` | "no serving channel for your account"; lists are advertisements, not entitlements | **no** (deliberately) |
 | Throttle | `429 您已达到总请求数限制…` / `429 Concurrency limit exceeded…` | states the 5/min rule (failures count) and to wait | **yes** |
 | Proxy 502 | `502 <!DOCTYPE html>…` | "upstream channel returned HTTP 502 (Bad gateway)" | **yes** |
+
+The first row is the subtlest behavior in the module: a 401 that must **not** be
+treated as an auth failure, because the key is fine and the provider's channel is
+down. Sending the user to `/login` there would be a wrong instruction.
 
 The rewrites are proven against pi's *real* classifiers (`test/errors.test.ts`
 imports `isRetryableAssistantError`, `isContextOverflow`, `getOverflowPatterns`):
@@ -237,10 +277,10 @@ the gateway's 5/min budget. Everything else preserves pi's classification.
 For the two failures a human must act on (bad key, empty balance), `turn_end`
 appends one persistent, deduped TUI note with the site link — gated on
 `ctx.hasUI`, because an entry appended after the errored assistant message makes
-`pi -p` print nothing at all (pitfall P23).
+`pi -p` print nothing at all.
 
 No overflow rewrite is attempted: the gateway never disclosed an overflow wording
-(the recon's oversized request returned an opaque upstream `400 We got a bad
+(the oversized request returned an opaque upstream `400 We got a bad
 response from the source`), so a gateway-specific pattern would be invented. pi's
 built-in OpenAI-compatible patterns already cover the common phrasings.
 
@@ -286,14 +326,17 @@ thinking on/off, and the error paths.
 
 ## What is verified live, and how
 
-All on **2026-09-26**, pi 0.87.1, key from `secret.env`. Cost discipline: every fact
-came from a **rejected** request (free: 401, 503, 429, and the 403 balance read) or a
-tiny generation (`max_tokens ≤ 300`). No limit was "measured" by generating.
+All on **2026-09-26**, pi 0.87.1, with a real key. Cost discipline: every fact
+came from a **rejected** request (free: 401, 503, 429) or a tiny generation
+(`max_tokens ≤ 300`). No limit was "measured" by generating. The one exception is
+check G, the balance read, which is opt-in and *not* free by construction — see
+§ Development.
 
 ### Offline + harness
 
 - `npm run typecheck` (`tsc -p tsconfig.json`) — clean.
-- `npm test` (`node --test`, with a preload that blocks `fetch`) — **93 passing**.
+- `npm test` (`node --test`, with a preload that blocks `fetch`) — **95 passing**
+  (run it rather than trusting the number).
   Includes wire-format tests driving pi-ai's real adapter across the catalog × every
   thinking level, and negative-safety tests against pi's real
   `isContextOverflow` / `isRetryableAssistantError` / `getOverflowPatterns`.
@@ -307,6 +350,9 @@ tiny generation (`max_tokens ≤ 300`). No limit was "measured" by generating.
   - E: invalid key → `401 Invalid token`, rewritten to the non-retryable sentence, 0
     tokens.
   - F: unknown id → `503 No available channel…`, rewritten, non-retryable, 0 tokens.
+  - G: the account balance, read from the 403 pre-billing text. **Opt-in**
+    (`SEEKAI_LIVE_BALANCE=1`) and not run for the figures above — see § Development
+    for why it is not free by construction.
 
 ### Real `pi` runs (loaded with `-e`, no global install)
 
@@ -320,61 +366,99 @@ tiny generation (`max_tokens ≤ 300`). No limit was "measured" by generating.
   exit 1 (after pi's own "Using custom model id" warning, which is pi's normal
   fallback for an unregistered id).
 
-## Cost log (what was spent, and why that figure)
+## What verifying this cost
 
-The gateway prices nothing, so USD figures come only from the balance its 403
-pre-billing text discloses. Token counts for harness runs are exact; the gateway
-publishes no per-token rate, so the USD is the balance delta, not a rate × tokens
-computation.
+≈ **$0.0036** in total, across three full harness runs, two real `pi -p` runs, the
+`POST /v1/messages` surface probe and ~20 paid probe calls. Every rejected probe
+(401, 503, 404, 429) cost nothing, which is most of what was learned.
 
-One caveat on that method, measured: the balance is shown to six decimals and does
-not always move for a small run — a 136-paid-token harness pass reported a delta of
-**$0.000000**. Treat the delta as a coarse upper bound on spend, not as a meter; the
-exact figure is the token count.
+The figure is a **balance delta, not `rate × tokens`**: the gateway publishes no
+per-token rate, so the only USD it discloses is the account balance inside its 403
+pre-billing text. Two consequences, both measured:
 
-| Activity | Tokens | Cost |
-|---|---|---|
-| `live/check.ts` run 1 (A–F) | 509 paid | $0.000106 (balance delta) |
-| `live/check.ts` run 2 (A–F, after a harness fix) | 602 paid | $0.000122 (balance delta) |
-| `live/check.ts` run 3 (A–F, final code) | 617 paid | $0.000154 (balance delta) |
-| one real `pi -p` run (`deepseek-v4.1-flash`) | not captured | **$0.001098 (balance delta)** |
-| one real `pi -p` run (`…/DeepSeek-V4-Flash-0731`) | not captured | ≈$0.001 (unmeasured, same shape) |
-| `research/raw/probe*.mjs` — ~20 paid 2xx calls | ≈1 500 out + ≈600 in | ≈$0.0005 (extrapolated) |
-| `POST /v1/messages` surface probe | ≈100 | ≈$0.00002 |
-| all rejected probes (401, 503, 404, 429, 403 balance reads) | 0 (not billed) | $0.000000 |
-| **Total** | | **≈ $0.0036** |
+- the delta is a coarse upper bound, not a meter — a 136-paid-token harness pass
+  reported **$0.000000**, because the balance is shown to six decimals and does not
+  always move for a small run;
+- the balance also moves for reasons unrelated to this plugin, so a delta taken
+  over a window is not attributable to the work in it. The exact, attributable
+  figures are the **token counts**, which the harness prints per request.
 
-That is **≈7 % of the $0.05 budget**. The account balance is *not* the build's spend:
-it moved by roughly two orders of magnitude more than the measured spend over the
-same window, which is concurrent account activity. The
-ledger itemises every 2xx call this build made; the 401/503/429/403 probes are listed
-at zero because a rejection is not billed.
+The per-request ledger is in
+[`research/2026-09-26-live-verification.md`](research/2026-09-26-live-verification.md)
+rather than here.
 
-## What remains unverified
 
-- **Context windows and per-model output caps.** Unobtainable for free here
-  (`max_tokens: 99999999` is accepted, not rejected), so they are conservative floors.
-  To measure: either find a documented page, or send a deliberately 10×-oversized
-  prompt and read the rejection — accepting that an *accepted* oversize prompt is
-  billed in full. Not done, per the "never buy a cap" rule.
-- **Prices.** None published; catalog is zero + `priceNote`.
-- **The six non-answering ids.** Whether the MiniMax Token Plan quota is restored,
-  whether `doubao-seed-2.0-code`'s 502 is transient, and whether `Qwen3.8-27B` is ever
-  granted are all upstream/account states re-checkable in one `npm run live` run.
-- **`hy4-preview-f`'s reasoning field.** Its usage reports `reasoning_tokens > 0`, but
-  the body was not captured (the retry hit the concurrency cap), so the field is
-  recorded as `unknown`.
-- **Auto-compaction end-to-end.** The classifier is unit-tested and the rewrite is
-  proven, but no real session was driven over the (unknown) context edge until pi
-  compacted.
-- **Live TUI rendering of the extracted thinking and of the `seekai-help` entry.**
-  Only the print-mode behavior and the `ctx.hasUI` gate are tested; the TUI was not
-  opened.
+## Known limitations
+
+- **Context windows and per-model output caps are floors, not measurements.**
+  They are unobtainable for free here — `max_tokens: 99999999` is accepted rather
+  than rejected, so no rejection discloses a cap. Measuring one means either
+  finding a documented page or sending a deliberately oversized prompt and
+  accepting that an *accepted* oversize request is billed in full. Not done: a cap
+  is never worth buying when the alternative is a conservative floor that only
+  makes pi compact earlier.
+- **Prices are zero because none are published.** pi reports `$0.00`; the account
+  is still debited (§ Install / use).
+- **Six of the eleven listed ids did not answer** on 2026-09-26. Whether the
+  MiniMax Token Plan quota is restored, whether `doubao-seed-2.0-code`'s 502 is
+  transient, and whether `Qwen3.8-27B` is ever granted are upstream/account states,
+  re-checkable in one `npm run live` run. They stay registered on purpose —
+  see § Why all 11 ids.
+- **`hy4-preview-f`'s reasoning field is unknown.** Its usage reports
+  `reasoning_tokens > 0`, but the body was not captured (the retry hit the
+  concurrency cap).
+- **Auto-compaction is proven at the classifier, not end to end.** No real session
+  was driven over the (unknown) context edge until pi compacted.
+- **During streaming, the raw `<think>` text is visible until the message
+  finalizes.** Only the finalized message is cleaned; fixing the live view needs a
+  custom SSE layer this plugin deliberately does not have (§ The `<think>` decision).
 - **`POST /v1/messages`** (tools/streaming) and the in-band Minimax error — see
   § Surfaces.
+
+## What was left unchecked in the build
+
+Recorded so a contributor does not re-derive it:
+
+- **Live TUI rendering** of the extracted thinking and of the `seekai-help` entry:
+  only the print-mode behavior and the `ctx.hasUI` gate are tested; the TUI was not
+  opened.
 - **`pi install <path>`** specifically (vs `-e`): the `pi.extensions` manifest is
-  standard, but the install path was not exercised to avoid mutating the global pi
+  standard, but the install path was not exercised, to avoid mutating the global pi
   config.
+
+## Development
+
+```bash
+node scripts/link-pi.mjs   # once: link pi's packages from your global install
+npm run check              # typecheck + the 95 offline tests
+npm run live               # opt-in A–F harness against the real gateway; spends credit
+```
+
+**Prerequisites.** Node ≥ 22.18 — the tests and `live/check.ts` are `.ts` executed
+directly (type stripping, and `node --test`'s `.ts` discovery, are unflagged from
+22.18) — plus a pi install.
+
+pi's own packages are not dependencies of this plugin: at runtime pi's extension
+loader aliases the bare `@earendil-works/pi-ai` specifier to its own copy, so a
+plain `npm install` leaves nothing to typecheck against. `scripts/link-pi.mjs`
+links them from your global pi install; it probes the npm prefix, nvm, pnpm,
+`~/.local`, `/usr/local` and the directory the `pi` executable resolves to, and
+creates junctions on Windows. For a specific install:
+`PI_ROOT=/path/to/node_modules node scripts/link-pi.mjs`. Verified against
+pi 0.87.1 / pi-ai 0.87.1 / `@types/node` 22.19.19.
+
+`npm run live` needs a key and nothing else — `SEEKAI_API_KEY`, or the credential
+`/login seekai` stored in `~/.pi/agent/auth.json`. It is paced ≥13 s apart because
+**the gateway allows 5 requests per minute and counts rejections**, and it backs
+off on 429. Never parallelize it.
+
+**Check G is opt-in and is not free by construction.** The only way this gateway
+discloses a balance is the 403 pre-billing refusal, which is free *only while the
+balance cannot cover the `max_tokens × price` reservation*. On an account that can
+cover it, the same request is accepted and billed — that is precisely what the
+`max_tokens: 99999999` measurement says. So G runs only under
+`SEEKAI_LIVE_BALANCE=1`.
+
 
 ## Layout
 
@@ -385,7 +469,8 @@ catalog.ts    pure data: the 11 ids, provenance, reasoning shape, level map
 models.ts     catalog -> pi Model: compat flags, conservative limits, zero cost
 discovery.ts  additive /v1/models overlay (authenticated, never throws)
 errors.ts     body recovery, readable error rewrites, inline-<think> extraction
-live/check.ts paced A–F live harness (explicit; not part of npm test)
+live/check.ts paced A–G live harness (G opt-in; explicit, not part of npm test)
 test/*.ts     node --test suite + no-network preload
-research/     this build's live-verification report (raw/ is gitignored)
+research/     the 2026-09-26 live-verification report (raw/ is gitignored)
+scripts/      link-pi.mjs — dev setup only, never loaded by pi
 ```

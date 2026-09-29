@@ -4,8 +4,9 @@
  *
  * `seekai.cc` matches none of pi-ai's URL auto-detection branches, so the
  * auto-detected profile is a vanilla OpenAI one that is wrong in several places.
- * Every flag below is set explicitly; the grounded ones cite the probe in
- * `research/`.
+ * Every flag below is set explicitly; the grounded ones cite the probe recorded
+ * in `research/2026-09-26-live-verification.md` (the raw transcripts behind it
+ * are gitignored and not published).
  *
  * Prices are zero on purpose: the gateway publishes none (see `catalog.ts`).
  */
@@ -87,7 +88,7 @@ export function buildModels(baseUrl: string): SeekaiModel[] {
 }
 
 /**
- * Conservative shape for an id this build has never seen (e.g. a future id
+ * Conservative shape for an id this catalog has never seen (e.g. a future id
  * surfaced by `GET /v1/models`). Cost stays zero so pi reports $0.00, and the
  * window is small enough that compaction fires early. This gateway routes by
  * name, so an unknown id's real capabilities are unknowable without probing.

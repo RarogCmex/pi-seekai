@@ -4,6 +4,9 @@
   "description": "seekai.cc provider for pi — curated chat catalog (openai-completions), /login, a live /v1/models overlay, and a readable error layer for new-api's 503/403/401/429 shapes.",
   "type": "module",
   "license": "MIT",
+  "engines": {
+    "node": ">=22.18.0"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/RarogCmex/pi-seekai.git"

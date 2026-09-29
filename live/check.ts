@@ -1,7 +1,9 @@
 /**
  * Live checks against the real seekai.cc gateway — the items the offline suite
  * cannot cover (README § "What is verified live, and how"). Not part of
- * `npm test`: run explicitly with `npm run live` (after `set -a; . ./secret.env`).
+ * `npm test`: run explicitly with `npm run live`. Needs a key from
+ * `SEEKAI_API_KEY` or from the credential `/login seekai` stored in
+ * `~/.pi/agent/auth.json`; no other file is read.
  *
  * **Hard constraint: 5 requests per minute, and rejected requests count.** Every
  * request here is paced (>=13 s apart) and 429s are backed off, because a burst
@@ -15,6 +17,13 @@
  * "find a limit". Each paid call prints the tokens it spent; a free probe prints
  * `0 tokens`.
  *
+ * **One exception, and it is not free by construction.** Check G reads the account
+ * balance, and the only way this gateway discloses one is the 403 pre-billing
+ * refusal — which is free *only while the balance cannot cover the reservation*
+ * (`max_tokens × price`). On an account that can cover it, the same request is
+ * accepted and billed; that is exactly what the `max_tokens: 99999999` measurement
+ * above says. G is therefore opt-in: set `SEEKAI_LIVE_BALANCE=1` to run it.
+ *
  *  A. GET /v1/models — the listing is what the catalog claims. Free.
  *  B. glm-5.3-flash — the inline `<think>` shape, and that `extractInlineThinking`
  *     turns it into a pi thinking block (no `<think>` left in the answer).
@@ -22,8 +31,9 @@
  *  D. a function tool round-trips (finish_reason tool_calls -> pi toolcall).
  *  E. an invalid key is rejected (free) and rewritten to a non-retryable sentence.
  *  F. an unknown model id is rejected (free) and rewritten to a non-retryable sentence.
- *  G. the account balance, read for free from the 403 pre-billing text, before and
- *     after — the only USD figure this gateway will disclose.
+ *  G. OPT-IN (`SEEKAI_LIVE_BALANCE=1`) — the account balance, read from the 403
+ *     pre-billing text before and after: the only USD figure this gateway
+ *     discloses, and free only while the balance cannot cover the reservation.
  *
  * Prints PASS/FAIL per item; exit code 1 if anything failed.
  */
