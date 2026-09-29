@@ -232,8 +232,19 @@ async function checkListing(): Promise<void> {
   );
 }
 
+/**
+ * Opt-in gate for check G. See the header: the balance is only disclosed by the
+ * 403 pre-billing refusal, and that refusal is free *only while the balance
+ * cannot cover the `max_tokens x price` reservation*. On an account that can
+ * cover it, this exact request is accepted and billed — which is what the
+ * `max_tokens: 99999999` measurement in the header records. So it does not run
+ * unless the operator asks for it.
+ */
+const BALANCE_ENABLED = /^1|true|yes|on$/i.test(process.env.SEEKAI_LIVE_BALANCE?.trim() ?? "");
+
 /** The 403 pre-billing text discloses the balance; the only USD figure available. */
 async function readBalance(): Promise<number | undefined> {
+  if (!BALANCE_ENABLED) return undefined;
   const { status, text } = await pacedFetch(`${BASE_URL}/chat/completions`, {
     method: "POST",
     headers: { Authorization: `Bearer ${KEY}`, "Content-Type": "application/json" },
@@ -251,6 +262,14 @@ async function readBalance(): Promise<number | undefined> {
 async function main(): Promise<void> {
   await checkListing();
 
+  if (!BALANCE_ENABLED) {
+    console.log(
+      "G: balance read skipped — set SEEKAI_LIVE_BALANCE=1 to opt in.\n" +
+        "   It is not free by construction: the balance is disclosed only by the 403\n" +
+        "   pre-billing refusal, which is free only while the balance cannot cover the\n" +
+        "   max_tokens x price reservation. On a funded account the request is billed.",
+    );
+  }
   const balanceBefore = await readBalance();
   let spentTokens = 0;
 
@@ -396,8 +415,8 @@ async function main(): Promise<void> {
       "",
       "Cost accounting",
       `  paid tokens this run: ${spentTokens}`,
-      `  balance before: ${balanceBefore !== undefined ? `$${balanceBefore}` : "unavailable (no 403)"}`,
-      `  balance after:  ${balanceAfter !== undefined ? `$${balanceAfter}` : "unavailable (no 403)"}`,
+      `  balance before: ${balanceBefore !== undefined ? `$${balanceBefore}` : BALANCE_ENABLED ? "unavailable (no 403)" : "skipped (SEEKAI_LIVE_BALANCE not set)"}`,
+      `  balance after:  ${balanceAfter !== undefined ? `$${balanceAfter}` : BALANCE_ENABLED ? "unavailable (no 403)" : "skipped (SEEKAI_LIVE_BALANCE not set)"}`,
       balanceBefore !== undefined && balanceAfter !== undefined
         ? `  measured balance delta: $${(balanceBefore - balanceAfter).toFixed(6)}`
         : "  measured balance delta: n/a",
