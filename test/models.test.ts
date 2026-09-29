@@ -66,11 +66,10 @@ describe("thinking levels", () => {
     const model = entryToModel(CATALOG_BY_ID.get("glm-5.3-flash")!, DEFAULT_BASE_URL);
     const levels = getSupportedThinkingLevels(model);
     assert.equal(levels.includes("off"), false, "off must be hidden: no measured disable");
-    assert.equal(clampThinkingLevel(model, "off" as ModelThinkingLevel), "minimal");
-  });
-
-  test("clamps a request for the hidden off-switch up to minimal", () => {
-    const model = entryToModel(CATALOG_BY_ID.get("glm-5.3-flash")!, DEFAULT_BASE_URL);
+    // Both halves of the contract belong in one test: hiding `off` is only safe
+    // *because* a request for it clamps up rather than falling through to the
+    // gateway's default. (A second test used to re-assert this line alone, which
+    // inflated the suite count without covering anything new.)
     assert.equal(clampThinkingLevel(model, "off" as ModelThinkingLevel), "minimal");
   });
 

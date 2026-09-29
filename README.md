@@ -335,7 +335,7 @@ check G, the balance read, which is opt-in and *not* free by construction — se
 ### Offline + harness
 
 - `npm run typecheck` (`tsc -p tsconfig.json`) — clean.
-- `npm test` (`node --test`, with a preload that blocks `fetch`) — **95 passing**
+- `npm test` (`node --test`, with a preload that blocks `fetch`) — **94 passing**
   (run it rather than trusting the number).
   Includes wire-format tests driving pi-ai's real adapter across the catalog × every
   thinking level, and negative-safety tests against pi's real
