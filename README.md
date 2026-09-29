@@ -430,7 +430,7 @@ Recorded so a contributor does not re-derive it:
 
 ```bash
 node scripts/link-pi.mjs   # once: link pi's packages from your global install
-npm run check              # typecheck + the 95 offline tests
+npm run check              # typecheck + the offline tests
 npm run live               # opt-in A–F harness against the real gateway; spends credit
 ```
 
