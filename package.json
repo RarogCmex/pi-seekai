@@ -1,6 +1,6 @@
 {
   "name": "@rarogcmex/pi-seekai",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "seekai.cc provider for pi — curated chat catalog (openai-completions), /login, a live /v1/models overlay, and a readable error layer for new-api's 503/403/401/429 shapes.",
   "type": "module",
   "license": "MIT",
