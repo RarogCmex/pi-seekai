@@ -454,7 +454,8 @@ pi 0.87.1 / pi-ai 0.87.1 / `@types/node` 22.19.19; the same setup and
 `npm run check` were re-run on pi 0.99.1 / pi-ai 0.99.1 (2026-09-30) — 94/94 green.
 
 `npm run live` needs a key and nothing else — `SEEKAI_API_KEY`, or the credential
-`/login seekai` stored in `~/.pi/agent/auth.json`. It is paced ≥13 s apart because
+`/login seekai` stored in `auth.json` under pi's agent dir (`$PI_CODING_AGENT_DIR`
+when set, else `~/.pi/agent`). It is paced ≥13 s apart because
 **the gateway allows 5 requests per minute and counts rejections**, and it backs
 off on 429. Never parallelize it.
 

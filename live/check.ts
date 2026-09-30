@@ -2,8 +2,9 @@
  * Live checks against the real seekai.cc gateway — the items the offline suite
  * cannot cover (README § "What is verified live, and how"). Not part of
  * `npm test`: run explicitly with `npm run live`. Needs a key from
- * `SEEKAI_API_KEY` or from the credential `/login seekai` stored in
- * `~/.pi/agent/auth.json`; no other file is read.
+ * `SEEKAI_API_KEY` or from the credential `/login seekai` stored in `auth.json`
+ * under pi's agent dir (resolved with pi's own `getAgentDir()`, so
+ * `$PI_CODING_AGENT_DIR` is honoured); no other file is read.
  *
  * **Hard constraint: 5 requests per minute, and rejected requests count.** Every
  * request here is paced (>=13 s apart) and 429s are backed off, because a burst
@@ -39,7 +40,8 @@
  */
 
 import { readFileSync } from "node:fs";
-import { homedir } from "node:os";
+import { join } from "node:path";
+import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
 import {
   isContextOverflow,
@@ -59,14 +61,22 @@ import { parseModelIds } from "../discovery.ts";
 
 // --- key ---------------------------------------------------------------------
 
+/**
+ * pi's own agent-dir resolver, so `$PI_CODING_AGENT_DIR` and rebranded
+ * distributions are honoured: a hardcoded `~/.pi/agent/auth.json` misses a pi
+ * started with an alternate config dir, which is where `/login seekai` stored the
+ * credential. Same class as the pi-nvidia-plus store fix (2026-09-30).
+ */
+const authJsonPath = (): string => join(getAgentDir(), "auth.json");
+
 function loadKey(): string {
   if (process.env.SEEKAI_API_KEY?.trim()) return process.env.SEEKAI_API_KEY.trim();
-  const auth = JSON.parse(readFileSync(`${homedir()}/.pi/agent/auth.json`, "utf8")) as Record<
+  const auth = JSON.parse(readFileSync(authJsonPath(), "utf8")) as Record<
     string,
     { type?: string; key?: string }
   >;
   const key = auth["seekai"]?.key?.trim();
-  if (!key) throw new Error("no seekai key in SEEKAI_API_KEY or ~/.pi/agent/auth.json");
+  if (!key) throw new Error(`no seekai key in SEEKAI_API_KEY or ${authJsonPath()}`);
   return key;
 }
 
