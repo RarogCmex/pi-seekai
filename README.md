@@ -450,7 +450,8 @@ links them from your global pi install; it probes the npm prefix, nvm, pnpm,
 `~/.local`, `/usr/local` and the directory the `pi` executable resolves to, and
 creates junctions on Windows. For a specific install:
 `PI_ROOT=/path/to/node_modules node scripts/link-pi.mjs`. Verified against
-pi 0.87.1 / pi-ai 0.87.1 / `@types/node` 22.19.19.
+pi 0.87.1 / pi-ai 0.87.1 / `@types/node` 22.19.19; the same setup and
+`npm run check` were re-run on pi 0.99.1 / pi-ai 0.99.1 (2026-09-30) — 94/94 green.
 
 `npm run live` needs a key and nothing else — `SEEKAI_API_KEY`, or the credential
 `/login seekai` stored in `~/.pi/agent/auth.json`. It is paced ≥13 s apart because
