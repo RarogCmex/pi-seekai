@@ -422,9 +422,14 @@ Recorded so a contributor does not re-derive it:
 - **Live TUI rendering** of the extracted thinking and of the `seekai-help` entry:
   only the print-mode behavior and the `ctx.hasUI` gate are tested; the TUI was not
   opened.
-- **`pi install <path>`** specifically (vs `-e`): the `pi.extensions` manifest is
-  standard, but the install path was not exercised, to avoid mutating the global pi
-  config.
+- **`pi install` from the published source** (vs `-e`) — exercised 2026-09-30
+  against `git:github.com/RarogCmex/pi-seekai@main` with `PI_CODING_AGENT_DIR`
+  pointed at a throwaway directory, so no global pi config was mutated: the
+  package installed and `pi --list-models seekai` listed all 11 curated ids under
+  a deliberately invalid key (the live `/v1/models` overlay therefore did not
+  contribute — an unprobed account degrades to the static catalog, which is the
+  documented behaviour). The control run (same key, empty config dir, no package)
+  listed none. Still unchecked: a billed request on a valid key.
 
 ## Development
 
