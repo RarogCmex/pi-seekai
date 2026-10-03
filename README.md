@@ -439,9 +439,9 @@ npm run check              # typecheck + the offline tests
 npm run live               # opt-in A–F harness against the real gateway; spends credit
 ```
 
-**Prerequisites.** Node ≥ 22.18 — the tests and `live/check.ts` are `.ts` executed
-directly (type stripping, and `node --test`'s `.ts` discovery, are unflagged from
-22.18) — plus a pi install.
+Prerequisites: **Node ≥ 22.19** — the floor comes from the host: pi's own
+`engines.node` is `>=22.19.0` (measured on both 0.87.0 and 1.0.0). Type
+stripping and `node --test`'s `.ts` discovery are unflagged from 22.18. — plus a pi install.
 
 pi's own packages are not dependencies of this plugin: at runtime pi's extension
 loader aliases the bare `@earendil-works/pi-ai` specifier to its own copy, so a
