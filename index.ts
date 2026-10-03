@@ -6,10 +6,12 @@
  * gateway's `new-api` failure shapes. The vendor-specific piece is the inline
  * `<think>` handling — see `errors.ts` `extractInlineThinking`.
  *
- * pi 0.87 boundaries: `message_end` rewrites the finalized assistant message
- * (recovered error text → readable sentence, inline `<think>` → `thinking` blocks)
- * before it is persisted, while `turn_end` appends a persistent TUI note for the
- * two failures a human must act on (bad key, exhausted balance).
+ * pi 0.87 boundaries, last probed live on 0.87.1: `message_end` rewrites the
+ * finalized assistant message (recovered error text → readable sentence, inline
+ * `<think>` → `thinking` blocks) before it is persisted, while `turn_end` appends
+ * a persistent TUI note for the two failures a human must act on (bad key,
+ * exhausted balance). On pi 1.0.0 (2026-10-03) the offline suite and the provider
+ * load are green.
  */
 
 // NOTE on this import: pi's extension loader aliases the bare
