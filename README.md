@@ -451,9 +451,10 @@ links them from your global pi install; it probes the npm prefix, nvm, pnpm,
 creates junctions on Windows. For a specific install:
 `PI_ROOT=/path/to/node_modules node scripts/link-pi.mjs`. Verified against
 pi 0.87.1 / pi-ai 0.87.1 / `@types/node` 22.19.19; the same setup and
-`npm run check` were re-run on pi 0.99.1 / pi-ai 0.99.1 (2026-09-30) and on
-pi 1.0.0 / pi-ai 1.0.0 (2026-10-03) — 94/94 green on both. Loading was checked
-separately on 1.0.0: `pi -ne -e <repo> --offline --list-models seekai` prints the
+`npm run check` were re-run on pi 0.99.1 / pi-ai 0.99.1 (2026-09-30), on
+pi 1.0.0 / pi-ai 1.0.0 (2026-10-03) and on pi 1.0.4 / pi-ai 1.0.4 (2026-10-06) —
+94/94 green on all. Loading was checked
+separately on 1.0.0 and 1.0.4: `pi -ne -e <repo> --offline --list-models seekai` prints the
 same 11 models.
 
 `npm run typecheck` shells out to a bare `tsc`, and this repo deliberately carries
