@@ -248,10 +248,12 @@ test.
 
 So `errors.ts` wraps the registered api surface with `withBodyRecovery`, a fetch
 wrapper that re-emits a non-OK body as `text/plain` — the standard dropped-body fix.
-Here it buys two things: the genuinely lost bodies come back, and *both* shapes
-arrive as one uniform `<status> <text>` that `parseGatewayError` can handle once.
-After that, `message_end` rewrites the five measured shapes into actionable
-sentences, and deliberately does **not** rewrite a sixth:
+Here it buys three things: the genuinely lost bodies come back; *both* shapes
+arrive as one uniform `<status> <text>` that `parseGatewayError` can handle once;
+and a failure delivered **inside HTTP 200** (`200 {"choices":null,"base_resp":…}`,
+on which pi-ai crashes before any rewrite runs) is demoted to a plain-text 400.
+After that, `message_end` rewrites the measured shapes into actionable
+sentences, and deliberately withholds the **auth** rewrite from one of them:
 
 | Shape | pi sees (after recovery) | Rewrite | Retryable after? |
 |---|---|---|---|
@@ -259,7 +261,9 @@ sentences, and deliberately does **not** rewrite a sixth:
 | Invalid key | `401 Invalid token` | names `/login seekai`, `SEEKAI_API_KEY`, the site | **no** (deterministic) |
 | Pre-billing refusal | `403 预扣费额度失败, 用户剩余额度: ＄…, 需要预扣费额度: ＄…` | explains the `max_tokens × price` reservation and that it is a balance, not a key, problem | **no** |
 | No channel | `503 No available channel for model X…` / `404 …not supported by any configured account…` | "no serving channel for your account"; lists are advertisements, not entitlements | **no** (deliberately) |
-| Throttle | `429 您已达到总请求数限制…` / `429 Concurrency limit exceeded…` | states the 5/min rule (failures count) and to wait | **yes** |
+| Throttle | `429 您已达到总请求数限制…` / `429 Concurrency limit exceeded…` / `429 group requests-per-minute limit exceeded` | states the 5/min rule (failures count) and to wait | **yes** |
+| Upstream down | `503 Service temporarily unavailable`, the proxy's bare `error code: 502` / `524`, in-band `upstream_http2_stream_error` / `…(generation killed)` (measured 2026-10-11) | names a provider-side outage; the key still lists models; retry in a minute or switch model | **yes** |
+| Relay quota-out (sent as **200**) | `400 已达到 Token Plan 用量上限…` — the gateway answered `200 {"choices":null,"base_resp":{status_code:2056,…}}`, on which pi-ai crashes (`reading 'tiers'`); `recoverErrorBody` demotes it to a plain-text 400 first | the **relay's** account is empty, not your balance (yours is only the 403); switch model | **no** |
 | Proxy 502 | `502 <!DOCTYPE html>…` | "upstream channel returned HTTP 502 (Bad gateway)" | **yes** |
 
 The first row is the subtlest behavior in the module: a 401 that must **not** be
@@ -268,7 +272,7 @@ down. Sending the user to `/login` there would be a wrong instruction.
 
 The rewrites are proven against pi's *real* classifiers (`test/errors.test.ts`
 imports `isRetryableAssistantError`, `isContextOverflow`, `getOverflowPatterns`):
-a 429/502 stays retryable, the deterministic three do not, and **none** triggers
+a 429/502/upstream-down 503 stays retryable, the deterministic three do not, and **none** triggers
 auto-compaction. One rewrite is a deliberate behavior change with a reason: the
 `model_not_found` rewrite **drops the numeric 503** because `503` is in pi's
 retryable pattern, and retrying a no-channel routing error three times only burns

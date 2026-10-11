@@ -11,12 +11,19 @@
  *     by driving pi-ai's real adapter with the recorded bodies (see
  *     `test/errors.test.ts`). `recoverErrorBody` re-emits a non-OK body as
  *     `text/plain` so the SDK falls back to raw text and the cause survives to
- *     `message_end`.
+ *     `message_end`. The same helper also catches failures delivered **inside
+ *     HTTP 200** (a `choices:null` body carrying an upstream `base_resp` error):
+ *     pi-ai crashes on those before any rewrite can see them, so they are
+ *     re-emitted as a plain-text 400.
  *
- *  2. **Readable rewrites.** `clarifySeekaiError` turns five measured shapes
+ *  2. **Readable rewrites.** `clarifySeekaiError` turns seven measured shape families
  *     (401 invalid token, 403 pre-billing credit refusal, 503/404 model_not_found,
- *     429 rate limit, 502 proxy HTML) into actionable sentences, plus a sixth
- *     case that is deliberately *not* treated as one of them: a 401 relayed
+ *     429 rate limit — both gateway throttles plus the group's requests-per-minute —
+ *     502 proxy HTML, the upstream-down family: 503 `Service temporarily
+ *     unavailable`, the proxy's bare `error code: 502|524`, in-band stream kills —
+ *     and the upstream quota-out delivered inside HTTP 200),
+ *     into actionable sentences, plus a seventh case that is deliberately *not*
+ *     treated as one of them: a 401 relayed
  *     verbatim from a broken upstream channel, which must not send the user to
  *     `/login`. Every rewrite is idempotent and
  *     is proven, in `test/errors.test.ts`, against pi's *real* classifiers
@@ -81,13 +88,51 @@ const BILLING_RE = /预扣费额度失败|用户剩余额度|insufficient_user_q
 const MODEL_NOT_FOUND_RE = /model_not_found|no available channel for model|not supported by any configured account/i;
 
 /**
- * The gateway's two throttles: its own 5/min counter
- * (`您已达到总请求数限制：1分钟内最多请求5次，包括失败次数`) and the per-group
- * concurrency cap (`Concurrency limit exceeded for group`, code
- * `gateway_concurrency_limit`). Both arrive as HTTP 429.
+ * The gateway's throttles, all HTTP 429 (measured 2026-09-26 and 2026-10-11):
+ *  - its own 5/min counter (`您已达到总请求数限制：1分钟内最多请求5次，包括失败次数`);
+ *  - the per-group concurrency cap (`Concurrency limit exceeded for group`, code
+ *    `gateway_concurrency_limit`);
+ *  - a per-group requests-per-minute limiter (`group requests-per-minute limit
+ *    exceeded`, type `rate_limit_exceeded` — the *type* is not matched by
+ *    `\brate.?limit\b`: `_` after `limit` is a word character, so the boundary fails,
+ *    which is why the literal is listed here);
+ *  - an upstream's own throttle relayed verbatim (`Upstream rate limit exceeded`,
+ *    type `rate_limit_error`).
  */
 const RATE_LIMIT_RE =
-  /已达到总请求数限制|concurrency limit exceeded|gateway_concurrency_limit|rate_limit_error|too many requests|\brate.?limit\b/i;
+  /已达到总请求数限制|concurrency limit exceeded|gateway_concurrency_limit|rate_limit_error|rate_limit_exceeded|requests-per-minute|too many requests|\brate.?limit\b/i;
+
+/**
+ * An upstream relay account exhausted **its own** quota, delivered inside HTTP 200
+ * (measured 2026-10-11 on `claude-sonnet-4-20250514`, which name-routes to a
+ * MiniMax upstream): `base_resp.status_code 2056`, `已达到 Token Plan 用量上限：
+ * 请升级 Token Plan 套餐或购买积分补充用量`.
+ *
+ * This is NOT the user's seekai balance (that leaks as a 403 pre-billing refusal,
+ * above): it is the relay's account, so no top-up advice applies. Deterministic for
+ * the session — retrying only burns the gateway's 5/min budget, hence the rewrite
+ * drops the numeric carrier status like model_not_found does.
+ */
+const TOKEN_PLAN_RE = /token plan|用量上限|status_code.{0,16}2056/i;
+
+/**
+ * The upstream channel is down — measured 2026-10-11 in four shapes:
+ *  - 503 `{"error":{"message":"Service temporarily unavailable","type":"api_error"}}`
+ *    from the gateway when a model's channel has no healthy upstream (six ids at
+ *    once that evening, `z-ai/glm-5.3` among them);
+ *  - the proxy's bare `error code: 502` / `error code: 524` when a non-streaming
+ *    generation holds the connection past ~125 s (CF origin timeout, measured on
+ *    `muse-spark-1.3-contributor`);
+ *  - in-band stream deaths: `upstream_http2_stream_error` and
+ *    `upstream returned incomplete with no content (generation killed)`.
+ *
+ * Matching on the message (and raw) rather than `status === 503` is deliberate:
+ * the distributor's deterministic `503 No available channel…` must keep falling
+ * into the model_not_found branch below (non-retryable), while this family must
+ * stay retryable — it is a transient provider-side outage and the key is fine.
+ */
+const UPSTREAM_DOWN_RE =
+  /service temporarily unavailable|upstream_error|upstream_http2_stream_error|upstream http\/2 stream failed|generation killed|error code: ?\d{3}/i;
 
 /** 502 with an HTML "Bad gateway" page from the proxy in front of the gateway. */
 const BAD_GATEWAY_RE = /<!doctype html|bad gateway/i;
@@ -163,28 +208,84 @@ export function extractGatewayMessage(body: string): string | undefined {
 }
 
 /**
- * Re-emit a non-OK response body as `text/plain` so the OpenAI SDK stops dropping
- * it. A successful response is returned untouched; so is a non-OK response whose
+ * The failure carrier the gateway uses **inside HTTP 200** (measured 2026-10-11):
+ * `200 {"choices":null,"base_resp":{"status_code":2056,"status_msg":"已达到
+ * Token Plan 用量上限…"}}`. pi-ai dereferences `choices` unguarded and throws an
+ * internal TypeError (`Cannot read properties of undefined (reading 'tiers')`),
+ * so the reason never reaches the user unless the 200 itself is demoted here.
+ * Only applies to JSON with **no `choices` array and an error carrier** — a real
+ * completion (and any other 200) is returned untouched.
+ */
+function extractOkErrorMessage(body: string): string | undefined {
+  const trimmed = body.trim();
+  if (!trimmed.startsWith("{")) return undefined;
+  try {
+    const parsed = JSON.parse(trimmed) as {
+      choices?: unknown;
+      base_resp?: { status_msg?: unknown };
+      error?: { message?: unknown };
+    };
+    if (Array.isArray(parsed.choices)) return undefined;
+    const fromBase = typeof parsed.base_resp?.status_msg === "string" ? parsed.base_resp.status_msg.trim() : "";
+    const fromError = typeof parsed.error?.message === "string" ? parsed.error.message.trim() : "";
+    return fromBase || fromError || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Re-emit a failure body as `text/plain` so the OpenAI SDK stops dropping it.
+ *
+ * Two paths:
+ *  - **non-OK** (all traditional statuses): the body is re-emitted verbatim as
+ *    plain text, status preserved.
+ *  - **HTTP 200 that carries an error instead of a completion** (see
+ *    `extractOkErrorMessage`): demoted to a plain-text **400** — 400 because the
+ *    token-plan rewrite that owns this shape must not echo a retryable `5xx` and
+ *    invite retries into the gateway's 5/min budget.
+ *
+ * `text/event-stream` responses are never inspected: buffering a live stream to
+ * look for errors would break the stream they are carrying.
+ *
+ * A successful response is returned untouched; so is a non-OK response whose
  * body carries no usable message.
  */
 export async function recoverErrorBody(response: Response): Promise<Response> {
-  if (response.ok) return response;
+  if (!response.ok) {
+    let body: string;
+    try {
+      // clone() so the original stream stays intact if we decide not to replace it.
+      body = await response.clone().text();
+    } catch {
+      return response;
+    }
+    const message = extractGatewayMessage(body);
+    if (!message) return response;
+    // Preserve the original headers (e.g. Retry-After) — only the body encoding changes.
+    const headers = new Headers(response.headers);
+    headers.set("content-type", "text/plain; charset=utf-8");
+    return new Response(message, {
+      status: response.status,
+      statusText: response.statusText,
+      headers,
+    });
+  }
+
+  const contentType = response.headers.get("content-type") ?? "";
+  if (!contentType.includes("json")) return response; // streams and anything else: untouched
   let body: string;
   try {
-    // clone() so the original stream stays intact if we decide not to replace it.
     body = await response.clone().text();
   } catch {
     return response;
   }
-  const message = extractGatewayMessage(body);
+  const message = extractOkErrorMessage(body);
   if (!message) return response;
-  // Preserve the original headers (e.g. Retry-After) — only the body encoding changes.
-  const headers = new Headers(response.headers);
-  headers.set("content-type", "text/plain; charset=utf-8");
   return new Response(message, {
-    status: response.status,
-    statusText: response.statusText,
-    headers,
+    status: 400,
+    statusText: "Bad Request",
+    headers: { "content-type": "text/plain; charset=utf-8" },
   });
 }
 
@@ -290,6 +391,31 @@ export function clarifySeekaiError(errorMessage: string): string | undefined {
       `${SENTINEL} rate limit (HTTP ${status ?? 429}): the gateway allows ${LIMIT_WORDS}. ` +
       "Wait about a minute before retrying; this is a transient throttle, not an account problem. " +
       "Original: " +
+      message
+    );
+  }
+
+  if (UPSTREAM_DOWN_RE.test(message) || UPSTREAM_DOWN_RE.test(raw)) {
+    // Kept retryable on purpose: the sentence echoes a `5xx` status (defaulting to
+    // 502, same convention as the HTML branch) and the original message, both of
+    // which sit in pi's retryable pattern — this outage passes, unlike
+    // model_not_found. It must also never route to `/login`: the key demonstrably
+    // works (`GET /v1/models` answers 200 while the channel is down).
+    return (
+      `${SENTINEL} the gateway's upstream channel is failing right now (HTTP ${status ?? 502}, \`${message}\`) — ` +
+      "a provider-side outage, not your key: the same key still answers `GET /v1/models`, and other " +
+      "models keep working. Retry in a minute or pick another model; re-running `/login` will not help. " +
+      "Original: " +
+      message
+    );
+  }
+
+  if (TOKEN_PLAN_RE.test(message)) {
+    return (
+      `${SENTINEL} the gateway's upstream relay account is out of quota (\`Token Plan 用量上限\`) — ` +
+      "this is the **relay's** account, not your seekai balance (yours surfaces only as a 403 refusal): " +
+      "your key is fine and still answers `GET /v1/models`. Picking another model is the fix; " +
+      "retrying will not help. Original: " +
       message
     );
   }

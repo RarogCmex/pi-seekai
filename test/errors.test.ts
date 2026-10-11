@@ -35,7 +35,30 @@ const BILLING =
   "403 预扣费额度失败, 用户剩余额度: ＄12.345678, 需要预扣费额度: ＄1500.000016";
 const RATE_LIMIT_429 = "429 您已达到总请求数限制：1分钟内最多请求5次，包括失败次数";
 const CONCURRENCY_429 = "429 Concurrency limit exceeded for group, please retry later";
+const GROUP_RATE_LIMIT_429 = "429 group requests-per-minute limit exceeded";
 const BAD_GATEWAY = "502 <!DOCTYPE html><html><head><title>seekai.cc | 502: Bad gateway</title></head></html>";
+
+/**
+ * The upstream-down family, measured live 2026-10-11 (see errors.ts above
+ * `UPSTREAM_DOWN_RE`). Four shapes, one meaning: the channel died, the key is fine.
+ */
+const SERVICE_DOWN_503 = "503 Service temporarily unavailable";
+const CF_ORIGIN_502 = "502 error code: 502"; // proxy, non-stream generation past ~125 s
+const CF_ORIGIN_524 = "error code: 524"; // status prefix not guaranteed on the bare body
+const STREAM_HTTP2_KILLED =
+    '{"error":{"code":"upstream_http2_stream_error","message":"Upstream HTTP/2 stream failed","type":"upstream_error"}}';
+const STREAM_GENERATION_KILLED = "upstream returned incomplete with no content (generation killed)";
+const UPSTREAM_DOWN = [SERVICE_DOWN_503, CF_ORIGIN_502, CF_ORIGIN_524, STREAM_HTTP2_KILLED, STREAM_GENERATION_KILLED];
+
+/**
+ * The quota-out delivered *inside HTTP 200* (measured live 2026-10-11): the id
+ * `claude-sonnet-4-20250514` name-routes to a MiniMax upstream whose relay account
+ * is empty. Body is what the gateway sent with status 200; `TOKEN_PLAN_SEEN` is
+ * what pi sees after `recoverErrorBody` demotes it to 400.
+ */
+const TOKEN_PLAN_200_BODY =
+  '{"_provider":"Minimax","base_resp":{"status_code":2056,"status_msg":"已达到 Token Plan 用量上限：请升级 Token Plan 套餐或购买积分补充用量"},"choices":null,"object":"chat.completion","model":"MiniMax-M2.7","usage":{"prompt_tokens":74,"completion_tokens":0}}';
+const TOKEN_PLAN_SEEN = "400 已达到 Token Plan 用量上限：请升级 Token Plan 套餐或购买积分补充用量";
 
 function assistant(errorMessage: string) {
   return {
@@ -121,6 +144,32 @@ describe("body recovery (the dropped-body fix)", () => {
     assert.equal(await recoverErrorBody(empty), empty);
   });
 
+  test("demotes a 200 that carries an upstream error instead of a completion", async () => {
+    const response = new Response(TOKEN_PLAN_200_BODY, {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+    const recovered = await recoverErrorBody(response);
+    // 400, not 5xx: the rewrite that owns this shape must stay non-retryable.
+    assert.equal(recovered.status, 400);
+    assert.match(recovered.headers.get("content-type") ?? "", /text\/plain/);
+    assert.equal(await recovered.text(), "已达到 Token Plan 用量上限：请升级 Token Plan 套餐或购买积分补充用量");
+  });
+
+  test("a real 200 completion and a live SSE stream are never touched", async () => {
+    const completion = new Response('{"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"ok"}}]}', {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+    assert.equal(await recoverErrorBody(completion), completion);
+
+    const sse = new Response('data: {"choices":[]}\n\n', {
+      status: 200,
+      headers: { "content-type": "text/event-stream" },
+    });
+    assert.equal(await recoverErrorBody(sse), sse);
+  });
+
   test("extractGatewayMessage prefers error.message, then message, then raw text", () => {
     assert.equal(extractGatewayMessage('{"error":{"message":"a"}}'), "a");
     assert.equal(extractGatewayMessage('{"message":"b"}'), "b");
@@ -175,8 +224,8 @@ describe("readable rewrites", () => {
     }
   });
 
-  test("both 429 throttles are readable and keep the 5/min rule", () => {
-    for (const raw of [RATE_LIMIT_429, CONCURRENCY_429]) {
+  test("all three 429 throttles are readable and keep the 5/min rule", () => {
+    for (const raw of [RATE_LIMIT_429, CONCURRENCY_429, GROUP_RATE_LIMIT_429]) {
       const clarified = clarifySeekaiError(raw)!;
       assert.match(clarified, /rate limit/);
       assert.match(clarified, /5 requests per minute/);
@@ -189,10 +238,38 @@ describe("readable rewrites", () => {
     assert.match(clarified, /Bad gateway/);
   });
 
+  test("upstream-down shapes name the outage, spare the key, and never send to /login", () => {
+    for (const raw of UPSTREAM_DOWN) {
+      const clarified = clarifySeekaiError(raw)!;
+      assert.ok(clarified.startsWith("seekai: "), raw);
+      assert.match(clarified, /upstream channel is failing/, raw);
+      assert.match(clarified, /Retry in a minute/, raw);
+      assert.match(clarified, /GET \/v1\/models/, raw);
+      assert.doesNotMatch(clarified, /Run `\/login/, raw); // may mention /login only to rule it out
+    }
+    // The deterministic no-channel 503 must keep its own rewrite, untouched.
+    const noChannel = clarifySeekaiError(MODEL_NOT_FOUND_503)!;
+    assert.match(noChannel, /model_not_found/);
+    assert.doesNotMatch(noChannel, /upstream channel is failing/);
+    // The distributor's request-id is not a match for the bare-CF pattern either:
+    // MODEL_NOT_FOUND_503 carries no "error code: NNN".
+  });
+
+  test("quota-out inside a 200 names the relay's account, not the balance", () => {
+    const clarified = clarifySeekaiError(TOKEN_PLAN_SEEN)!;
+    assert.match(clarified, /relay/);
+    assert.match(clarified, /Token Plan/);
+    assert.match(clarified, /not your seekai balance/);
+    assert.match(clarified, /another model/);
+    assert.doesNotMatch(clarified, /Top up the account/); // billing advice must not leak in
+    assert.doesNotMatch(clarified, /Run `\/login/);
+    assert.equal(needsPersistentHelp(TOKEN_PLAN_SEEN), false);
+  });
+
   test("leaves unrelated failures untouched and is idempotent", () => {
     assert.equal(clarifySeekaiError("500 boom internal"), undefined);
     assert.equal(clarifySeekaiError(""), undefined);
-    for (const raw of [AUTH_SEEN, BILLING, MODEL_NOT_FOUND_404, RATE_LIMIT_429, BAD_GATEWAY]) {
+    for (const raw of [AUTH_SEEN, BILLING, MODEL_NOT_FOUND_404, RATE_LIMIT_429, BAD_GATEWAY, TOKEN_PLAN_SEEN, ...UPSTREAM_DOWN]) {
       const once = clarifySeekaiError(raw)!;
       assert.equal(clarifySeekaiError(once), undefined, "second pass must be a no-op");
     }
@@ -207,7 +284,10 @@ describe("negative-safety against pi's real classifiers", () => {
     ["model_not_found", MODEL_NOT_FOUND_503],
     ["rate limit", RATE_LIMIT_429],
     ["concurrency limit", CONCURRENCY_429],
+    ["group requests-per-minute", GROUP_RATE_LIMIT_429],
     ["bad gateway", BAD_GATEWAY],
+    ["token plan quota-out (in 200)", TOKEN_PLAN_SEEN],
+    ...UPSTREAM_DOWN.map((raw, i): [string, string] => [`upstream down ${i}`, raw]),
   ];
 
   test("no rewrite accidentally triggers auto-compaction", () => {
@@ -224,11 +304,16 @@ describe("negative-safety against pi's real classifiers", () => {
     // Transient throttles and upstream gateways must keep pi's retry behavior.
     assert.equal(isRetryableAssistantError(assistant(clarifySeekaiError(RATE_LIMIT_429)!)), true);
     assert.equal(isRetryableAssistantError(assistant(clarifySeekaiError(CONCURRENCY_429)!)), true);
+    assert.equal(isRetryableAssistantError(assistant(clarifySeekaiError(GROUP_RATE_LIMIT_429)!)), true);
     assert.equal(isRetryableAssistantError(assistant(clarifySeekaiError(BAD_GATEWAY)!)), true);
-    // Deterministic: an invalid key, an empty balance, a missing channel.
+    for (const raw of UPSTREAM_DOWN) {
+      assert.equal(isRetryableAssistantError(assistant(clarifySeekaiError(raw)!)), true, raw);
+    }
+    // Deterministic: an invalid key, an empty balance, a missing channel, a dead relay account.
     assert.equal(isRetryableAssistantError(assistant(clarifySeekaiError(AUTH_SEEN)!)), false);
     assert.equal(isRetryableAssistantError(assistant(clarifySeekaiError(BILLING)!)), false);
     assert.equal(isRetryableAssistantError(assistant(clarifySeekaiError(MODEL_NOT_FOUND_503)!)), false);
+    assert.equal(isRetryableAssistantError(assistant(clarifySeekaiError(TOKEN_PLAN_SEEN)!)), false);
   });
 
   test("the model_not_found rewrite is what removes the wasteful retry (control)", () => {
@@ -257,8 +342,10 @@ describe("shouldClarify / needsPersistentHelp", () => {
     assert.equal(needsPersistentHelp(AUTH_SEEN), true);
     assert.equal(needsPersistentHelp(BILLING), true);
     assert.equal(needsPersistentHelp(RATE_LIMIT_429), false);
+    assert.equal(needsPersistentHelp(GROUP_RATE_LIMIT_429), false);
     assert.equal(needsPersistentHelp(MODEL_NOT_FOUND_503), false);
     assert.equal(needsPersistentHelp(BAD_GATEWAY), false);
+    for (const raw of UPSTREAM_DOWN) assert.equal(needsPersistentHelp(raw), false, raw);
   });
 
   test("also recognizes the already-rewritten sentence (turn_end runs after message_end)", () => {
