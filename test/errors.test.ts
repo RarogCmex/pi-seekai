@@ -17,14 +17,14 @@ import {
  * The exact messages pi composes from the gateway's recorded bodies (2026-09-26),
  * *after* `withBodyRecovery` re-emits the non-OK body as plain text.
  *
- * Measured against pi-ai's real adapter, without the wrapper:
- *   - **enveloped** `{"error":{code,message,…}}` (what every measured status
- *     sends) survives as a stringified blob glued to the status —
- *     `401: {"code":"","message":"Invalid token",…}`;
- *   - **non-OpenAI** bodies (bare `{"code","message"}`, proxy HTML) lose the body
- *     entirely — `401 status code (no body)`.
- * `AUTH_DROPPED` is the worst case; the enveloped shape is asserted below so a
- * future pi-ai change that stops stringifying it shows up here.
+ * What the adapter composes *without* the wrapper is asserted against the real
+ * adapter in `test/wire-format.test.ts`, because it moved once already: on pi-ai
+ * 0.87.1 (openai SDK 6) a body the SDK could not fold into its message was
+ * dropped — a bare `{"code","message"}` 401 arrived as `401 status code (no
+ * body)` — while pi-ai 1.0.4 and 1.4.0 (SDK 7) surface the whole body as
+ * `401: {"code":"","message":"Invalid token"}`. `AUTH_DROPPED` is the 0.87.1
+ * shape, kept as the defensive fixture for a genuinely bodiless failure, which a
+ * current host still composes the same way.
  */
 const AUTH_SEEN = "401 Invalid token";
 const AUTH_DROPPED = "401 status code (no body)";

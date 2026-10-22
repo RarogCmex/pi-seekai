@@ -226,32 +226,38 @@ a clean answer, not `<think>` text.
 
 ### Errors: normalise the body, then rewrite
 
-The gateway is `new-api`, and its failures arrive in two shapes. Which one you get
-decides what pi sees, and the difference is worth spelling out because it is easy
-to reason about the wrong one:
+The gateway is `new-api`, and its failures arrive in two shapes. What pi makes of
+them moved once under this plugin, so both rows say which host they were measured
+on:
 
 - **Enveloped** `{"error":{"code":…,"message":…,"type":…}}` — what **every status
-  we measured** actually sends (401, 403, 429, 503, 404). The OpenAI SDK strips the
-  outer `error` key, and pi-ai then surfaces the *stringified remainder* glued to the
-  status: `401: {"code":"","message":"Invalid token …","type":"new_api_error"}`.
-  The text survives — as a JSON blob no human wants to read and no rewrite wants to
-  parse twice.
+  we measured** actually sends (401, 403, 429, 503, 404). The outer `error` key is
+  stripped and the *stringified remainder* is glued to the status:
+  `401: {"code":"","message":"Invalid token …","type":"new_api_error"}`. The text
+  survives — as a JSON blob no human wants to read and no rewrite wants to parse
+  twice. (Same on pi-ai 0.87.1 and 1.4.0.)
 - **Non-OpenAI** — a bare `{"code":…,"message":…}` with no `error` key, and the
-  proxy's HTML on 502. The SDK composes its message only from `error`, so pi sees
-  bare `401 status code (no body)` / `502 status code (no body)`. Here the body
-  really is lost.
+  proxy's HTML on 502. On pi-ai 0.87.1 (openai SDK 6) the SDK composed its message
+  only from `error`, so pi saw bare `401 status code (no body)` / `502 status code
+  (no body)` and the body really was lost. Since the SDK 7 bump — present by pi-ai
+  0.99.1, re-measured on 1.0.4 and 1.4.0 — the whole body is folded in instead:
+  `401: {"code":"","message":"Invalid token"}`, and the 502 page arrives in full.
 
-Both rows are measured offline by driving pi-ai's real adapter with both fixtures
-for the same status (enveloped → `401: {"code":…}`; bare → `401 status code (no
-body)`), and `test/errors.test.ts` locks the enveloped shape in as a regression
-test.
+Both rows are measured offline by driving pi-ai's real adapter with the recorded
+bodies: `test/wire-format.test.ts` asserts what the current host composes with and
+without the wrapper, so the next drift of this kind fails in CI instead of waiting
+for a live probe to notice.
 
 So `errors.ts` wraps the registered api surface with `withBodyRecovery`, a fetch
-wrapper that re-emits a non-OK body as `text/plain` — the standard dropped-body fix.
-Here it buys three things: the genuinely lost bodies come back; *both* shapes
-arrive as one uniform `<status> <text>` that `parseGatewayError` can handle once;
-and a failure delivered **inside HTTP 200** (`200 {"choices":null,"base_resp":…}`,
-on which pi-ai crashes before any rewrite runs) is demoted to a plain-text 400.
+wrapper that re-emits a non-OK body as `text/plain`. On a current host that is no
+longer the dropped-body fix it started as; it buys three things instead: *both*
+shapes arrive as one uniform `<status> <text>` that `parseGatewayError` handles
+once and a human can read (an unrecognized shape no longer surfaces a JSON blob or
+a wall of markup); an HTML gateway page collapses to its first line; and a failure
+delivered **inside HTTP 200** (`200 {"choices":null,"base_resp":…}`, from which no
+host version reads a reason — 1.4.0 reports a bare, *retryable* `Stream ended
+without finish_reason`) is demoted to a plain-text 400. On a pre-0.99.1 host, which
+`peerDependencies: "*"` still admits, it recovers the dropped body as well.
 After that, `message_end` rewrites the measured shapes into actionable
 sentences, and deliberately withholds the **auth** rewrite from one of them:
 
@@ -263,7 +269,7 @@ sentences, and deliberately withholds the **auth** rewrite from one of them:
 | No channel | `503 No available channel for model X…` / `404 …not supported by any configured account…` | "no serving channel for your account"; lists are advertisements, not entitlements | **no** (deliberately) |
 | Throttle | `429 您已达到总请求数限制…` / `429 Concurrency limit exceeded…` / `429 group requests-per-minute limit exceeded` | states the 5/min rule (failures count) and to wait | **yes** |
 | Upstream down | `503 Service temporarily unavailable`, the proxy's bare `error code: 502` / `524`, in-band `upstream_http2_stream_error` / `…(generation killed)` (measured 2026-10-11) | names a provider-side outage; the key still lists models; retry in a minute or switch model | **yes** |
-| Relay quota-out (sent as **200**) | `400 已达到 Token Plan 用量上限…` — the gateway answered `200 {"choices":null,"base_resp":{status_code:2056,…}}`, on which pi-ai crashes (`reading 'tiers'`); `recoverErrorBody` demotes it to a plain-text 400 first | the **relay's** account is empty, not your balance (yours is only the 403); switch model | **no** |
+| Relay quota-out (sent as **200**) | `400 已达到 Token Plan 用量上限…` — the gateway answered `200 {"choices":null,"base_resp":{status_code:2056,…}}`, from which the adapter reads no reason at all (pi-ai 1.4.0: a bare, retryable `Stream ended without finish_reason`); `recoverErrorBody` demotes it to a plain-text 400 first | the **relay's** account is empty, not your balance (yours is only the 403); switch model | **no** |
 | Proxy 502 | `502 <!DOCTYPE html>…` | "upstream channel returned HTTP 502 (Bad gateway)" | **yes** |
 
 The first row is the subtlest behavior in the module: a 401 that must **not** be

@@ -5,16 +5,23 @@
  *
  *  1. **Error-body recovery.** The gateway is `new-api`, whose failure envelope
  *     is `{"code":…,"message":…}` for several statuses (401, 503, and its own 429)
- *     with **no `error` key**. The OpenAI SDK builds its message only from
- *     `error`, so it drops those bodies and pi sees `401 status code (no body)` /
- *     `503 status code (no body)` / `429 status code (no body)` — measured offline
- *     by driving pi-ai's real adapter with the recorded bodies (see
- *     `test/errors.test.ts`). `recoverErrorBody` re-emits a non-OK body as
- *     `text/plain` so the SDK falls back to raw text and the cause survives to
- *     `message_end`. The same helper also catches failures delivered **inside
- *     HTTP 200** (a `choices:null` body carrying an upstream `base_resp` error):
- *     pi-ai crashes on those before any rewrite can see them, so they are
- *     re-emitted as a plain-text 400.
+ *     with **no `error` key**. On pi-ai 0.87.1 (openai SDK 6) the SDK built its
+ *     message only from `error`, so those bodies were dropped and pi saw
+ *     `401 status code (no body)` / `503 status code (no body)` / `429 status code
+ *     (no body)`. Since the SDK 7 bump (present by pi-ai 0.99.1, re-measured on
+ *     1.0.4 and 1.4.0) the adapter folds the whole body in instead —
+ *     `401: {"code":"","message":"Invalid token"}`, and an HTML gateway page
+ *     arrives in full — so nothing is lost on a current host, but what arrives is a
+ *     blob, not a sentence. `recoverErrorBody` re-emits a non-OK body as
+ *     `text/plain`, which turns every shape into one uniform `<status> <text>` for
+ *     `parseGatewayError` and the reader, collapses a page to its first line, and
+ *     still recovers the dropped body on a pre-0.99.1 host (`peerDependencies` is
+ *     `*`). `test/wire-format.test.ts` drives the real adapter with the recorded
+ *     bodies and locks that, with and without the wrapper. The same helper also
+ *     catches failures delivered **inside HTTP 200** (a `choices:null` body
+ *     carrying an upstream `base_resp` error), which no host version reads a reason
+ *     out of: they are re-emitted as a plain-text 400 (see
+ *     `extractOkErrorMessage`).
  *
  *  2. **Readable rewrites.** `clarifySeekaiError` turns seven measured shape families
  *     (401 invalid token, 403 pre-billing credit refusal, 503/404 model_not_found,
@@ -53,8 +60,10 @@ const SENTINEL = "seekai:";
 // are in `test/fixtures/`.
 
 /**
- * 401 `{"code":"","message":"Invalid token"}` — with the body dropped the raw
- * message is the bare `401 status code (no body)`.
+ * 401 `{"code":"","message":"Invalid token"}` — after `recoverErrorBody` the raw
+ * message is the plain `401 Invalid token`; a current host surfaces the same body
+ * unparsed as `401: {"code":…}`, and pi-ai 0.87.1 dropped it entirely
+ * (`401 status code (no body)`, still composed for a genuinely bodiless 401).
  *
  * **A 401 has two meanings here** and they must not share a rewrite. The gateway's
  * own rejection is `{"message":"Invalid token","type":"new_api_error"}` **with a
@@ -210,9 +219,17 @@ export function extractGatewayMessage(body: string): string | undefined {
 /**
  * The failure carrier the gateway uses **inside HTTP 200** (measured 2026-10-11):
  * `200 {"choices":null,"base_resp":{"status_code":2056,"status_msg":"已达到
- * Token Plan 用量上限…"}}`. pi-ai dereferences `choices` unguarded and throws an
- * internal TypeError (`Cannot read properties of undefined (reading 'tiers')`),
- * so the reason never reaches the user unless the 200 itself is demoted here.
+ * Token Plan 用量上限…"}}`. No host version reads a reason out of it: driving the
+ * adapter directly on pi-ai 1.0.4 and on 1.4.0 (which guards `choices`) yields a
+ * bare `Stream ended without finish_reason`. The 2026-10-11 live run recorded an
+ * internal TypeError for this body instead (`Cannot read properties of undefined
+ * (reading 'tiers')`), so that one came from above the adapter and does not
+ * reproduce on the current host. Either way the reason never reaches the user
+ * unless the 200 is demoted here — and the bare message is worse than opaque,
+ * because `ended without` sits in pi's retryable pattern, so pi re-sends a
+ * deterministic quota failure into the gateway's 5/min budget.
+ * `test/wire-format.test.ts` drives the real adapter with the recorded body and
+ * locks both halves of that.
  * Only applies to JSON with **no `choices` array and an error carrier** — a real
  * completion (and any other 200) is returned untouched.
  */
@@ -235,7 +252,10 @@ function extractOkErrorMessage(body: string): string | undefined {
 }
 
 /**
- * Re-emit a failure body as `text/plain` so the OpenAI SDK stops dropping it.
+ * Re-emit a failure body as `text/plain`, so the adapter composes one uniform
+ * `<status> <human text>` instead of a stringified JSON blob (a current host) or
+ * `status code (no body)` (pi-ai 0.87.1, which dropped a body the openai SDK could
+ * not fold into its message).
  *
  * Two paths:
  *  - **non-OK** (all traditional statuses): the body is re-emitted verbatim as
@@ -347,8 +367,9 @@ export function clarifySeekaiError(errorMessage: string): string | undefined {
     );
   }
 
-  // `status === 401` covers the dropped-body form: the SDK composes
-  // `401 status code (no body)` when the new-api envelope is dropped, and this
+  // `status === 401` covers the dropped-body form: pi-ai 0.87.1 composed
+  // `401 status code (no body)` when the new-api envelope was dropped (a current
+  // host surfaces the body, and an empty one still composes this), and this
   // gateway returns 401 only for an invalid key.
   if (AUTH_RE.test(message) || status === 401) {
     return (
