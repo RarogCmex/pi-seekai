@@ -10,14 +10,15 @@
  * finalized assistant message (recovered error text → readable sentence, inline
  * `<think>` → `thinking` blocks) before it is persisted, while `turn_end` appends
  * a persistent TUI note for the two failures a human must act on (bad key,
- * exhausted balance). On pi 1.0.0 (2026-10-03) the offline suite and the provider
+ * exhausted balance). On pi 1.4.0 (2026-10-22) the offline suite and the provider
  * load are green.
  */
 
 // NOTE on this import: pi's extension loader aliases the bare
 // "@earendil-works/pi-ai" specifier to pi-ai's compat entrypoint, a strict
 // superset of the core one that re-exports `openAICompletionsApi`. Subpaths
-// other than /compat, /oauth and /providers/all are NOT aliased. tsconfig.json
+// other than /compat, /models, /oauth and /providers/all are NOT aliased
+// (/models joined the list in pi 1.4.0). tsconfig.json
 // mirrors the loader's alias so `npm run typecheck` sees what pi sees. This is
 // the only pi-runtime-only import in the package; everything else lives in
 // modules plain Node can load, which is what makes them testable.
