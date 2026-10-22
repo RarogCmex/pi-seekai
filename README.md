@@ -56,8 +56,10 @@ tell you:
 - **A key comes from the seekai.cc site.** Nothing in this plugin can create one;
   the `/login` prompt names the site.
 - **pi version.** The `<think>` extraction and the `message_end` rewrite depend on
-  pi 0.87 hook semantics (`index.ts`, `models.ts`). `peerDependencies` is `*`, so
-  an older pi may load the plugin and silently degrade rather than refuse.
+  pi 0.87 hook semantics (`index.ts`, `models.ts`), unchanged through 1.4.0 — the
+  offline suite and the load are re-run on every host bump (§ Development).
+  `peerDependencies` is `*`, so an older pi may load the plugin and silently
+  degrade rather than refuse.
 
 Environment:
 
@@ -134,6 +136,15 @@ Bearer <key>` and `401 {"message":"Invalid token"}` without it, and
 `POST /v1/chat/completions` answers 200 with Bearer. new-api's native scheme *is*
 Bearer, so no extra header is needed; the plugin does not read the key a second
 time outside pi's auth resolution.
+
+What else goes out is the host's business, and pi 1.4.0 moved it: the adapter also
+sends pi's client identity — `User-Agent: pi/1.4.0 (darwin; node/v26.10.0; x64)` —
+plus the openai SDK's own `x-stainless-*` headers, and **no** attribution headers,
+since 1.4.0 keys those to OpenRouter, NVIDIA NIM and OpenCode hosts and a custom
+provider is none of them. Measured offline on pi-ai 1.4.0 by capturing the request
+the adapter builds; no probe was spent on it. This plugin neither sets nor removes
+headers (`before_provider_headers`, whose attribution visibility 1.4.0 changed, is
+not used here), so that list is informational.
 
 There is no zero-inference key probe at `/login`. `GET /v1/models` *would* serve as
 one (401 = bad key, free), but it needs the network and would make `/login` fail
@@ -418,7 +429,10 @@ rather than here.
   `reasoning_tokens > 0`, but the body was not captured (the retry hit the
   concurrency cap).
 - **Auto-compaction is proven at the classifier, not end to end.** No real session
-  was driven over the (unknown) context edge until pi compacted.
+  was driven over the (unknown) context edge until pi compacted. Since pi 1.4.0 a
+  summary uses the model's *output limit* rather than a fixed cap, which here is
+  the unverified 4 K floor — and for a forced thinker that budget is shared with
+  the reasoning (§ Thinking control). Whether a summary fits was not measured.
 - **During streaming, the raw `<think>` text is visible until the message
   finalizes.** Only the finalized message is cleaned; fixing the live view needs a
   custom SSE layer this plugin deliberately does not have (§ The `<think>` decision).
@@ -463,8 +477,12 @@ creates junctions on Windows. For a specific install:
 pi 0.87.1 / pi-ai 0.87.1 / `@types/node` 22.19.19; the same setup and
 `npm run check` were re-run on pi 0.99.1 / pi-ai 0.99.1 (2026-09-30), on
 pi 1.0.0 / pi-ai 1.0.0 (2026-10-03) and on pi 1.0.4 / pi-ai 1.0.4 (2026-10-06) —
-94/94 green on all. Loading was checked
-separately on 1.0.0 and 1.0.4: `pi -ne -e <repo> --offline --list-models seekai` prints the
+94/94 green on all — and on pi 1.4.0 / pi-ai 1.4.0 / `@types/node` 26.6.5
+(2026-10-22), 100/100 green, typechecked with both the local tsc
+(7.1.0-dev.20260823.1) and the 5.9.3 CI pins. The 1.4.0 pass was **offline only**
+(no paid probe was run), so the gateway facts above still date from 2026-09-26 and
+2026-10-11. Loading was checked
+separately on 1.0.0, 1.0.4 and 1.4.0: `pi -ne -e <repo> --offline --list-models seekai` prints the
 same 11 models.
 
 `npm run typecheck` shells out to a bare `tsc`, and this repo deliberately carries
